@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Integrated AI</string>
+    <string name="hint_message">Type a message</string>
+    <string name="send">Send</string>
+    <string name="clear_chat">Clear</string>
+    <string name="backend_url_hint">Backend URL</string>
+    <string name="save">Save</string>
+    <string name="check_connection">Check</string>
+    <string name="status_scaffold">No response yet.</string>
+    <string name="attach">Attach file</string>
+    <string name="analyze_files">Analyze files</string>
+    <string name="no_attachments">No files attached. Attach images, PDF, DOCX or text for analysis.</string>
+</resources>
