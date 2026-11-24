@@ -815,21 +815,22 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._guard_request():
             return
-        if self.path == "/":
+        request_path = self.path.split("?", 1)[0]
+        if request_path == "/":
             body = INDEX_HTML.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-        elif self.path == "/health":
+        elif request_path == "/health":
             self._json(200, {"status": "ok", "providers": {k: bool(v) for k, v in KEYS.items()}, "uploads": upload_limits()})
-        elif self.path == "/providers":
+        elif request_path == "/providers":
             self._json(200, capabilities())
-        elif self.path.startswith("/workspace/list"):
+        elif request_path.startswith("/workspace/list"):
             qs = self._query()
             self._json(200, {"files": workspace_list(qs.get("session_id", "web"))})
-        elif self.path.startswith("/workspace/download"):
+        elif request_path.startswith("/workspace/download"):
             qs = self._query()
             try:
                 data = workspace_read(qs.get("session_id", "web"), qs.get("file", ""))
@@ -841,7 +842,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
-        elif self.path == "/memory/sessions":
+        elif request_path == "/memory/sessions":
             self._json(200, {"sessions": memory_sessions()})
         else:
             self._json(404, {"error": "not found"})
