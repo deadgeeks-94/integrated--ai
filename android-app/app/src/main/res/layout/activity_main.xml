@@ -3,21 +3,23 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:background="#F7F7F8"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp"
+    android:paddingTop="8dp">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:layout_height="56dp"
         android:gravity="center_vertical"
-        android:paddingBottom="8dp">
+        android:orientation="horizontal">
 
         <ImageView
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:contentDescription="Integrated AI logo"
             android:src="@drawable/ic_integrated_ai"
-            android:padding="3dp" />
+            android:padding="2dp" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -27,19 +29,29 @@
             android:paddingStart="10dp">
 
             <TextView
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Integrated AI"
-                android:textSize="21sp"
+                android:textColor="#171717"
+                android:textSize="18sp"
                 android:textStyle="bold" />
 
             <TextView
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Chat • Code • Learn • Work"
-                android:textSize="12sp"
-                android:alpha="0.75" />
+                android:text="Your intelligent workspace"
+                android:textColor="#777777"
+                android:textSize="11sp" />
         </LinearLayout>
+
+        <Button
+            android:id="@+id/clearButton"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:minHeight="0dp"
+            android:text="New chat"
+            android:textAllCaps="false"
+            android:textSize="12sp" />
     </LinearLayout>
 
     <TextView
@@ -47,157 +59,237 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/status_scaffold"
-        android:textSize="12sp"
-        android:paddingVertical="6dp" />
+        android:textColor="#656565"
+        android:textSize="11sp"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp"
+        android:background="#ECEDEF" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="vertical"
+        android:padding="10dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/panel_background">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="CONNECTION"
+            android:textColor="#777777"
+            android:textStyle="bold"
+            android:textSize="10sp"
+            android:letterSpacing="0.08" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <EditText
+                android:id="@+id/backendUrlInput"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:hint="@string/backend_url_hint"
+                android:singleLine="true"
+                android:inputType="textUri"
+                android:textSize="12sp"
+                android:padding="8dp"
+                android:background="@drawable/input_background" />
+
+            <Button
+                android:id="@+id/saveUrlButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:minHeight="0dp"
+                android:text="Save"
+                android:textAllCaps="false"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/checkButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:minHeight="0dp"
+                android:text="Check"
+                android:textAllCaps="false"
+                android:textSize="12sp" />
+        </LinearLayout>
 
         <EditText
-            android:id="@+id/backendUrlInput"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="@string/backend_url_hint"
-            android:inputType="textUri"
-            android:padding="8dp" />
-
-        <Button
-            android:id="@+id/saveUrlButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/save" />
-
-        <Button
-            android:id="@+id/checkButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/check_connection" />
+            android:id="@+id/accessTokenInput"
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:layout_marginTop="5dp"
+            android:hint="Backend access token (not saved)"
+            android:inputType="textPassword"
+            android:autofillHints=""
+            android:singleLine="true"
+            android:textSize="12sp"
+            android:padding="8dp"
+            android:background="@drawable/input_background" />
     </LinearLayout>
-
-    <EditText
-        android:id="@+id/accessTokenInput"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Backend access token (not saved)"
-        android:inputType="textPassword"
-        android:autofillHints=""
-        android:singleLine="true" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="7dp">
 
         <Spinner
             android:id="@+id/providerSpinner"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1" />
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:background="@drawable/input_background"
+            android:paddingStart="7dp" />
 
         <Spinner
             android:id="@+id/agentSpinner"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1" />
-
-        <Button
-            android:id="@+id/clearButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/clear_chat" />
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:layout_marginStart="7dp"
+            android:background="@drawable/input_background"
+            android:paddingStart="7dp" />
     </LinearLayout>
 
-    <LinearLayout
+    <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:scrollbars="none"
+        android:layout_marginTop="5dp">
 
-        <Button
-            android:id="@+id/projectButton"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Project" />
+            android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/memoryButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Memory" />
+            <Button
+                android:id="@+id/projectButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:minHeight="0dp"
+                android:text="Project"
+                android:textAllCaps="false"
+                android:textSize="11sp" />
 
-        <Button
-            android:id="@+id/workspaceButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Workspace" />
+            <Button
+                android:id="@+id/memoryButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:minHeight="0dp"
+                android:text="Memory"
+                android:textAllCaps="false"
+                android:textSize="11sp" />
 
-        <Button
-            android:id="@+id/saveReplyButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Save reply" />
-    </LinearLayout>
+            <Button
+                android:id="@+id/workspaceButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:minHeight="0dp"
+                android:text="Workspace"
+                android:textAllCaps="false"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/saveReplyButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:minHeight="0dp"
+                android:text="Save reply"
+                android:textAllCaps="false"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </HorizontalScrollView>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/chatRecycler"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:padding="4dp" />
+        android:clipToPadding="false"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp" />
 
     <TextView
         android:id="@+id/attachedText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/no_attachments"
-        android:textSize="12sp"
-        android:paddingVertical="4dp" />
+        android:textColor="#666666"
+        android:textSize="11sp"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:padding="5dp" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
         <Button
             android:id="@+id/attachButton"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="38dp"
             android:layout_weight="1"
-            android:text="@string/attach" />
+            android:minHeight="0dp"
+            android:text="＋ Attach"
+            android:textAllCaps="false"
+            android:textSize="11sp" />
 
         <Button
             android:id="@+id/analyzeButton"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="38dp"
             android:layout_weight="1"
-            android:text="@string/analyze_files" />
+            android:minHeight="0dp"
+            android:text="Analyze files"
+            android:textAllCaps="false"
+            android:textSize="11sp" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="7dp"
+        android:layout_marginTop="5dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/composer_background">
 
         <EditText
             android:id="@+id/messageInput"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:minHeight="46dp"
+            android:maxHeight="120dp"
             android:hint="@string/hint_message"
-            android:padding="10dp"
-            android:inputType="textMultiLine" />
+            android:background="@android:color/transparent"
+            android:padding="8dp"
+            android:textSize="14sp"
+            android:inputType="textCapSentences|textMultiLine"
+            android:gravity="center_vertical" />
 
         <Button
             android:id="@+id/sendButton"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/send" />
+            android:layout_height="44dp"
+            android:minHeight="0dp"
+            android:text="Send  ↑"
+            android:textAllCaps="false"
+            android:textSize="12sp" />
     </LinearLayout>
 
 </LinearLayout>
