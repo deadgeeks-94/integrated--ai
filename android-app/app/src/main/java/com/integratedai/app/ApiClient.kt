@@ -11,13 +11,14 @@ import kotlinx.coroutines.withContext
  * Talks only to the Python backend. No AI provider keys live here.
  * Keys stay in server-side env vars (OPENAI_API_KEY etc).
  */
-class ApiClient(private val baseUrl: String) {
+class ApiClient(private val baseUrl: String, private val accessToken: String = "") {
 
     private fun normalized(): String = baseUrl.trimEnd('/')
 
     private fun get(path: String): String {
         val conn = (URL(normalized() + path).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
+            if (accessToken.isNotBlank()) setRequestProperty("Authorization", "Bearer $accessToken")
             connectTimeout = 8000
             readTimeout = 15000
         }
@@ -36,6 +37,7 @@ class ApiClient(private val baseUrl: String) {
             readTimeout = readTimeoutMs
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
+            if (accessToken.isNotBlank()) setRequestProperty("Authorization", "Bearer $accessToken")
         }
         try {
             conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
