@@ -180,7 +180,7 @@ class MainActivity : AppCompatActivity() {
         statusText.text = "Checking ${store.backendUrl} ..."
         lifecycleScope.launch {
             try {
-                val client = ApiClient(store.backendUrl)
+                val client = ApiClient(store.backendUrl, accessTokenInput.text.toString())
                 val health = client.health()
                 val providers = try { client.providers() } catch (e: Exception) { "(providers endpoint unavailable)" }
                 statusText.text = "Health: $health\nProviders: $providers"
@@ -202,7 +202,7 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val reply = ApiClient(store.backendUrl).chat(text, agent, provider, sessionId)
+                val reply = ApiClient(store.backendUrl, accessTokenInput.text.toString()).chat(text, agent, provider, sessionId)
                 adapter.add(ChatMessage("assistant", reply))
                 statusText.text = "Done."
             } catch (e: Exception) {
@@ -231,7 +231,7 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val reply = ApiClient(store.backendUrl).analyzeFiles(question, agent, provider, sessionId, files)
+                val reply = ApiClient(store.backendUrl, accessTokenInput.text.toString()).analyzeFiles(question, agent, provider, sessionId, files)
                 adapter.add(ChatMessage("assistant", reply))
                 statusText.text = "Done."
             } catch (e: Exception) {
