@@ -42,6 +42,7 @@ import json
 import os
 import hmac
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import re
 import zipfile
@@ -228,6 +229,7 @@ def capabilities():
         "providers": {k: {"configured": bool(v), "env_var": KEY_ENV[k],
                           "vision": k in VISION_PROVIDERS} for k, v in KEYS.items()},
         "agents": list(AGENTS),
+        "combined": {"available": True, "mode": "parallel-compare-and-synthesise", "configured_providers": available_providers()},
         "images": {"extensions": sorted(IMAGE_MIME_BY_EXT), "mimes": sorted(IMAGE_MIMES),
                    "vision_providers": list(VISION_PROVIDERS),
                    "note": "Images are sent as vision input to OpenAI/Gemini/Claude. DeepSeek cannot see images; with auto routing the server picks a configured vision provider. With no vision provider configured it explains this instead of faking analysis."},
@@ -398,6 +400,56 @@ def choose_vision_provider(task, agent):
     return None
 
 
+def _is_provider_error(reply: str) -> bool:
+    return reply.startswith(("OpenAI error", "Gemini error", "Claude error", "DeepSeek error")) or "is not configured" in reply or "cannot analyze images" in reply
+
+
+def combined_answer(messages, task):
+    """Run every configured provider in parallel, then synthesise their answers."""
+    configured = available_providers()
+    unavailable = [name for name in PROVIDERS if name not in configured]
+    if not configured:
+        return "Combined AI Council is not ready: no AI providers are configured yet."
+    if len(configured) == 1:
+        only = configured[0]
+        reply = PROVIDERS[only](messages, task)
+        if _is_provider_error(reply):
+            return f"Combined AI Council could not get a response from {DISPLAY_NAMES[only]}: {reply}"
+        return (f"Combined AI Council · 1 of 4 providers connected\n"
+                f"Only {DISPLAY_NAMES[only]} is configured, so this is a single-model answer for now. "
+                f"Configure more providers to enable cross-model comparison.\n\n{reply}")
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=len(configured)) as pool:
+        futures = {pool.submit(PROVIDERS[name], messages, task): name for name in configured}
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                results[name] = future.result()
+            except Exception as exc:
+                results[name] = f"{DISPLAY_NAMES[name]} error: {exc}"
+    successful = {name: value for name, value in results.items() if not _is_provider_error(value)}
+    if not successful:
+        details = "\n".join(f"{DISPLAY_NAMES[n]}: {results[n]}" for n in configured)
+        return "Combined AI Council: all configured providers failed.\n" + details
+
+    synthesis_provider = next((n for n in ("openai", "gemini", "claude", "deepseek") if n in successful), None)
+    source_text = "\n\n".join(f"--- {DISPLAY_NAMES[n]} response ---\n{successful[n]}" for n in successful)
+    synthesis_messages = [
+        {"role": "system", "content": "You are the synthesis editor for a multi-model research council. Compare the supplied model responses. Identify agreement and disagreement, correct obvious inconsistencies, preserve important nuance, and produce one clear, well-structured answer. Do not claim external verification or citations that are not present in the supplied material."},
+        {"role": "user", "content": f"Original question:\n{task}\n\nResponses from the configured models:\n{source_text}\n\nSynthesize these into one answer. Briefly note meaningful disagreements or uncertainty."}
+    ]
+    synthesis = PROVIDERS[synthesis_provider](synthesis_messages, task)
+    consulted = ", ".join(DISPLAY_NAMES[n] for n in successful)
+    unavailable_note = ("\nNot configured: " + ", ".join(DISPLAY_NAMES[n] for n in unavailable) + ".") if unavailable else ""
+    if _is_provider_error(synthesis):
+        body = "\n\n".join(f"**{DISPLAY_NAMES[n]}**\n{successful[n]}" for n in successful)
+        return (f"Combined AI Council · responses collected from: {consulted}. "
+                f"Synthesis by {DISPLAY_NAMES[synthesis_provider]} failed, so individual answers are shown.{unavailable_note}\n\n{body}")
+    return (f"Combined AI Council · models consulted: {consulted}. "
+            f"Synthesised by {DISPLAY_NAMES[synthesis_provider]}.{unavailable_note}\n\n{synthesis}")
+
+
 def answer(task: str, agent=None, provider=None, session_id="cli", attachments=None) -> str:
     """Ask the orchestrator and record the turn in memory."""
     agent = agent or agent_for(task)
@@ -412,8 +464,8 @@ def answer(task: str, agent=None, provider=None, session_id="cli", attachments=N
             provider = vp
         else:
             provider = choose_provider(task, agent)
-    if provider not in PROVIDERS:
-        return f"Unknown provider '{provider}'. Choose openai, gemini, claude, or deepseek."
+    if provider != "combined" and provider not in PROVIDERS:
+        return f"Unknown provider '{provider}'. Choose combined, openai, gemini, claude, deepseek, or auto."
     history = memory.history(session_id)
     system = AGENTS.get(agent, AGENTS["general"])["system"]
     messages = [{"role": "system", "content": system}]
@@ -422,8 +474,8 @@ def answer(task: str, agent=None, provider=None, session_id="cli", attachments=N
     if attachments:
         user_msg["attachments"] = attachments
     messages.append(user_msg)
-    reply = PROVIDERS[provider](messages, task)
-    if not reply.startswith(("OpenAI error", "Gemini error", "Claude error", "DeepSeek error")) and "is not configured" not in reply and "cannot analyze images" not in reply and "No vision-capable provider" not in reply:
+    reply = combined_answer(messages, task) if provider == "combined" else PROVIDERS[provider](messages, task)
+    if not _is_provider_error(reply) and "No vision-capable provider" not in reply:
         names = ", ".join(a.get("name", "file") for a in attachments) if attachments else None
         memory.add(session_id, "user", task + (f" [attachments: {names}]" if names else ""))
         memory.add(session_id, "assistant", reply)
