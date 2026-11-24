@@ -47,6 +47,15 @@
             android:text="@string/check_connection" />
     </LinearLayout>
 
+    <EditText
+        android:id="@+id/accessTokenInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Backend access token (not saved)"
+        android:inputType="textPassword"
+        android:autofillHints=""
+        android:singleLine="true" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
