@@ -40,6 +40,9 @@ import binascii
 import io
 import json
 import os
+import hmac
+import threading
+import time
 import re
 import zipfile
 import zlib
@@ -81,6 +84,12 @@ MAX_ZIP_UNCOMPRESSED_BYTES = int(os.getenv("MAX_ZIP_UNCOMPRESSED_BYTES", "209715
 MAX_REQUEST_BYTES = int(UPLOAD_TOTAL_MAX_BYTES * 1.4 + 1024 * 1024)
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
+APP_ENV = os.getenv("APP_ENV", "development").lower()
+APP_ACCESS_TOKEN = os.getenv("APP_ACCESS_TOKEN", "")
+RATE_LIMIT_MAX_REQUESTS = max(1, int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "60")))
+RATE_LIMIT_WINDOW_SECONDS = max(1, int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60")))
+_rate_lock = threading.Lock()
+_rate_hits = {}
 
 KEYS = {
     "openai": OPENAI_KEY,
@@ -754,6 +763,30 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def _guard_request(self):
+        now = time.monotonic()
+        client_ip = self.client_address[0] if self.client_address else "unknown"
+        with _rate_lock:
+            hits = [stamp for stamp in _rate_hits.get(client_ip, []) if now - stamp < RATE_LIMIT_WINDOW_SECONDS]
+            if len(hits) >= RATE_LIMIT_MAX_REQUESTS:
+                self._json(429, {"error": "Too many requests. Please wait and try again."})
+                return False
+            hits.append(now)
+            _rate_hits[client_ip] = hits
+        path = self.path.split("?", 1)[0]
+        if path in ("/", "/health"):
+            return True
+        if APP_ENV == "production" and not APP_ACCESS_TOKEN:
+            self._json(503, {"error": "Server access token is not configured."})
+            return False
+        if APP_ACCESS_TOKEN or APP_ENV == "production":
+            supplied = self.headers.get("Authorization", "")
+            expected = "Bearer " + APP_ACCESS_TOKEN
+            if not APP_ACCESS_TOKEN or not hmac.compare_digest(supplied, expected):
+                self._json(401, {"error": "Unauthorized. Add your backend access token."})
+                return False
+        return True
+
     def _json(self, code, obj):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(code)
@@ -776,6 +809,8 @@ class Handler(BaseHTTPRequestHandler):
         return {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
 
     def do_GET(self):
+        if not self._guard_request():
+            return
         if self.path == "/":
             body = INDEX_HTML.encode("utf-8")
             self.send_response(200)
@@ -808,6 +843,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def do_POST(self):
+        if not self._guard_request():
+            return
         try:
             data = self._body()
             if self.path == "/chat":
@@ -886,6 +923,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve():
+    if APP_ENV == "production" and not APP_ACCESS_TOKEN:
+        raise SystemExit("Refusing to start in production without APP_ACCESS_TOKEN.")
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Integrated AI serving on http://{HOST}:{PORT} (open in an Android browser on the same network)")
     print(f"Configured providers: {available_providers() or 'none (set an API key env var, see README.md)'}")
