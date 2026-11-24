@@ -739,6 +739,7 @@ button{padding:10px 16px;font-size:16px}
 <div id="log">Ask a question, or attach images and documents.</div>
 <select id="agent"><option>general</option><option>coding</option><option>research</option><option>security</option><option>assignment</option></select>
 <select id="provider"><option>auto</option><option>openai</option><option>gemini</option><option>claude</option><option>deepseek</option></select>
+<input type="password" id="token" placeholder="Backend access token (not saved)">
 <textarea id="q" rows="3" placeholder="Type a message"></textarea>
 <input type="file" id="f" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.docx,.txt,.md,.py,.json,.csv,.html,.js,.sh,.yml,.yaml,.log">
 <button onclick="send()">Send (with attachments if selected)</button>
@@ -751,7 +752,10 @@ async function send(){
    payload.files=[];
    for(const f of files){const buf=await f.arrayBuffer();payload.files.push({filename:f.name,data_b64:b64(buf)});}
  }
- const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const headers={'Content-Type':'application/json'};
+ const token=document.getElementById('token').value;
+ if(token) headers['Authorization']='Bearer '+token;
+ const r=await fetch('/chat',{method:'POST',headers,body:JSON.stringify(payload)});
  const d=await r.json(); log('You: '+payload.message+'\\nAI: '+(d.reply||d.error));
 }
 function log(t){const e=document.getElementById('log');e.textContent=t+'\\n---\\n'+e.textContent;}
