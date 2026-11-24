@@ -21,7 +21,7 @@ A small Python orchestrator that routes tasks to specialist agents and, when con
   - Capability matrix: `GET /providers` returns each provider's `vision: true/false`, the supported extensions, the active limits, and notes. `GET /health` includes the limits.
   - Auto routing with images: with `provider=auto`, an image upload picks a configured vision provider (OpenAI, then Gemini, then Claude). With no vision provider configured it explains what to set instead of faking an answer. Selecting `deepseek` with an image says plainly DeepSeek cannot analyze images.
   - Android app: Attach file button picks images/documents (multi-select), Analyze files sends them to `POST /upload/analyze`. No API keys in the app, ever.
-- API/backend server: `python main.py serve` starts it on `HOST:PORT` (default `0.0.0.0:8000`). Endpoints: `GET /`, `GET /health`, `GET /providers`, `GET /memory/sessions`, `GET /workspace/list`, `GET /workspace/download`, `POST /chat`, `POST /upload/analyze`, `POST /process-file`, `POST /workspace/save`, `POST /workspace/edit`, `POST /clear`.
+- API/backend server: `python main.py serve` starts it on `HOST:PORT` (default `0.0.0.0:8000`). Set `APP_ACCESS_TOKEN` to require `Authorization: Bearer <token>` on every endpoint except `/` and `/health`. In production, also set `APP_ENV=production`; the server refuses to start without `APP_ACCESS_TOKEN`. Basic per-IP in-memory rate limiting defaults to 60 requests per 60 seconds and is configurable with `RATE_LIMIT_MAX_REQUESTS` and `RATE_LIMIT_WINDOW_SECONDS`. The rate limiter is per process and is not a replacement for a production gateway/WAF. The browser UI and Android app provide a password field; the Android token is held only in memory and must be re-entered after restart. Use HTTPS for any remote deployment. Endpoints: `GET /`, `GET /health`, `GET /providers`, `GET /memory/sessions`, `GET /workspace/list`, `GET /workspace/download`, `POST /chat`, `POST /upload/analyze`, `POST /process-file`, `POST /workspace/save`, `POST /workspace/edit`, `POST /clear`.
 - Mobile web interface: open `http://<your-computer-ip>:8000` in a browser on the same Wi-Fi. A separate native Kotlin Android client is included under `android-app/`; it connects to this Python backend.
 
 ## Setup
@@ -48,6 +48,8 @@ A small Python orchestrator that routes tasks to specialist agents and, when con
    export PROVIDER="auto"   # or openai | gemini | claude | deepseek
    export AGENT="general"   # or coding | research | security
    export PORT="8000"
+   export APP_ENV="production" APP_ACCESS_TOKEN="generate-a-long-random-token"
+   export RATE_LIMIT_MAX_REQUESTS="60" RATE_LIMIT_WINDOW_SECONDS="60"
    export UPLOAD_MAX_BYTES="52428800" MAX_UPLOAD_FILES="10" UPLOAD_TOTAL_MAX_BYTES="209715200"
    ```
 
@@ -107,7 +109,7 @@ curl -X POST http://localhost:8000/upload/analyze \
 - File uploads are size/count limited (see the limits section above). PDF/DOCX extraction is best-effort stdlib-only text extraction: scanned/image PDFs need OCR (not included), and some PDF layouts may extract imperfectly. No vector search.
 - Memory is local JSON on one device, not shared across devices or users.
 - Provider integrations are basic chat completions; no streaming, tools, or function calling yet.
-- The server has no authentication. Run it on your own network or behind a password-protected tunnel; do not expose it to the public internet as is.
+- Authentication is optional in development when `APP_ACCESS_TOKEN` is unset. For public hosting, set `APP_ENV=production` and a strong `APP_ACCESS_TOKEN`; the server fails closed if production mode has no token. `/` and `/health` are public for the landing page and host health checks. HTTPS is required for remote use. The built-in in-memory rate limit is a basic safeguard, not a distributed abuse-prevention system.
 - Model names are configurable defaults. If a default is not available on your account, set the matching `MODEL_*` variable.
 
 ## GitHub and automated builds
