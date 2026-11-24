@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: ChatAdapter
     private lateinit var statusText: TextView
     private lateinit var urlInput: EditText
+    private lateinit var accessTokenInput: EditText
     private lateinit var messageInput: EditText
     private lateinit var providerSpinner: Spinner
     private lateinit var agentSpinner: Spinner
@@ -103,6 +104,7 @@ class MainActivity : AppCompatActivity() {
         store = SettingsStore(this)
         statusText = findViewById(R.id.statusText)
         urlInput = findViewById(R.id.backendUrlInput)
+        accessTokenInput = findViewById(R.id.accessTokenInput)
         messageInput = findViewById(R.id.messageInput)
         providerSpinner = findViewById(R.id.providerSpinner)
         agentSpinner = findViewById(R.id.agentSpinner)
@@ -144,7 +146,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.clearButton).setOnClickListener {
             lifecycleScope.launch {
                 try {
-                    ApiClient(store.backendUrl).clear(sessionId)
+                    ApiClient(store.backendUrl, accessTokenInput.text.toString()).clear(sessionId)
                     adapter.clear()
                     statusText.text = "Chat cleared on server."
                 } catch (e: Exception) {
