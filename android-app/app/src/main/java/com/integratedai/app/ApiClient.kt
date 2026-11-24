@@ -2,8 +2,10 @@ package com.integratedai.app
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -14,6 +16,7 @@ import kotlinx.coroutines.withContext
 class ApiClient(private val baseUrl: String, private val accessToken: String = "") {
 
     private fun normalized(): String = baseUrl.trimEnd('/')
+    private fun queryValue(value: String): String = URLEncoder.encode(value, "UTF-8")
 
     private fun get(path: String): String {
         val conn = (URL(normalized() + path).openConnection() as HttpURLConnection).apply {
@@ -25,6 +28,25 @@ class ApiClient(private val baseUrl: String, private val accessToken: String = "
         try {
             val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
             return stream.bufferedReader().use { it.readText() }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun getBytes(path: String): ByteArray {
+        val conn = (URL(normalized() + path).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            if (accessToken.isNotBlank()) setRequestProperty("Authorization", "Bearer $accessToken")
+            connectTimeout = 10000
+            readTimeout = 30000
+        }
+        try {
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val detail = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                throw IOException("Download failed (HTTP $code): $detail")
+            }
+            return conn.inputStream.use { it.readBytes() }
         } finally {
             conn.disconnect()
         }
@@ -64,8 +86,7 @@ class ApiClient(private val baseUrl: String, private val accessToken: String = "
             postJson("/chat", body).optString("reply", "(no reply field)")
         }
 
-    /** One-shot file analysis against POST /upload/analyze. Images go to the backend's
-     *  vision-capable provider (OpenAI/Gemini/Claude); documents/text are extracted server-side. */
+    /** One-shot file analysis; file bytes go only to the backend. */
     suspend fun analyzeFiles(
         question: String,
         agent: String,
@@ -87,19 +108,53 @@ class ApiClient(private val baseUrl: String, private val accessToken: String = "
             put("session_id", sessionId)
             put("files", arr)
         }
-        // File uploads can take a while: analysis + provider round trip.
-        postJson("/upload/analyze", body, readTimeoutMs = 180000).optString("reply", "(no reply field)")
+        postJson("/upload/analyze", body, readTimeoutMs = 180000)
+            .optString("reply", "(no reply field)")
     }
 
-    /** Lists files in the session workspace (generated/downloadable files). */
+    /** Lists files in this session's workspace. */
     suspend fun workspaceList(sessionId: String): String =
-        withContext(Dispatchers.IO) { get("/workspace/list?session_id=" + sessionId) }
+        withContext(Dispatchers.IO) {
+            get("/workspace/list?session_id=" + queryValue(sessionId))
+        }
 
-    /** Returns the download URL for a workspace file (open in browser to save). */
-    fun workspaceDownloadUrl(sessionId: String, filename: String): String =
-        normalized() + "/workspace/download?session_id=" + sessionId + "&file=" + filename
+    /** Saves generated text/code in the session workspace. */
+    suspend fun workspaceSave(sessionId: String, filename: String, content: String): String =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject().apply {
+                put("session_id", sessionId)
+                put("filename", filename)
+                put("content", content)
+            }
+            postJson("/workspace/save", body).toString()
+        }
 
-    suspend fun memorySessions(): String = withContext(Dispatchers.IO) { get("/memory/sessions") }
+    /** Applies one exact text replacement to an existing workspace file. */
+    suspend fun workspaceEdit(
+        sessionId: String,
+        filename: String,
+        oldText: String,
+        newText: String
+    ): String = withContext(Dispatchers.IO) {
+        val body = JSONObject().apply {
+            put("session_id", sessionId)
+            put("filename", filename)
+            put("old_text", oldText)
+            put("new_text", newText)
+        }
+        postJson("/workspace/edit", body).toString()
+    }
+
+    /** Downloads bytes directly with Authorization; do not open the protected URL in a browser. */
+    suspend fun workspaceDownload(sessionId: String, filename: String): ByteArray =
+        withContext(Dispatchers.IO) {
+            val path = "/workspace/download?session_id=" + queryValue(sessionId) +
+                "&file=" + queryValue(filename)
+            getBytes(path)
+        }
+
+    suspend fun memorySessions(): String =
+        withContext(Dispatchers.IO) { get("/memory/sessions") }
 
     suspend fun clear(sessionId: String): String = withContext(Dispatchers.IO) {
         postJson("/clear", JSONObject().put("session_id", sessionId), readTimeoutMs = 8000).toString()
