@@ -105,7 +105,7 @@ curl -X POST http://localhost:8000/upload/analyze \
 
 ## Honest limitations
 
-- The native Android source is included, but this archive does not contain a verified APK. Build it with Android Studio or the included GitHub Actions workflow.
+- The native Android source is included. A successful GitHub Actions run can produce a debug APK artifact; installation and runtime behavior must still be tested on a physical device.
 - File uploads are size/count limited (see the limits section above). PDF/DOCX extraction is best-effort stdlib-only text extraction: scanned/image PDFs need OCR (not included), and some PDF layouts may extract imperfectly. No vector search.
 - Memory is local JSON on one device, not shared across devices or users.
 - Provider integrations are basic chat completions; no streaming, tools, or function calling yet.
@@ -121,6 +121,15 @@ Two GitHub Actions workflows are included:
 
 To use them, upload the contents of this `integrated-ai/` folder to the root of a GitHub repository. Push to `main` or `master`, then open the repository's **Actions** tab. After the Android workflow succeeds, open its run and download the APK artifact.
 
-## Security warning before deployment
+## Deployment notes
 
-The Python HTTP backend currently has **no authentication**. Do not expose it directly to the public internet or deploy it as a public service. Keep it on a trusted local network for development until authentication, HTTPS, rate limiting, and production configuration are added. API keys must remain in server-side environment variables and must never be committed.
+The backend includes optional bearer-token authentication and a basic per-process, per-IP rate limiter. Before public deployment:
+
+1. Set `APP_ENV=production` and configure a long, random `APP_ACCESS_TOKEN` as a hosting secret. The server refuses to start in production if the token is missing.
+2. Keep provider keys (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`) only in the host's secret/environment-variable settings. Never commit them or embed them in the APK.
+3. Set the service start command to `python main.py serve`. The server reads the host-provided `PORT` environment variable and listens on `0.0.0.0` by default. `GET /health` is public for host health checks; other API endpoints require the bearer token.
+4. Attach persistent storage before relying on memory or workspace files. Set `MEMORY_FILE` and `WORKSPACE_DIR` to paths on that mounted volume; otherwise local files may be lost when the service is recreated.
+5. The built-in rate limiter is in-memory and per process. It is only a basic safeguard, not distributed abuse protection. Use the host's additional network/security controls where available.
+6. Use HTTPS for all remote app connections. Do not deploy until the environment variables, storage, and access controls have been reviewed.
+
+The README may lag behind code as features evolve; verify the current implementation and hosting configuration before deployment.
