@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.IntegratedAI" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <item name="colorPrimary">@color/purple_500</item>
-        <item name="colorPrimaryVariant">@color/purple_700</item>
-        <item name="colorOnPrimary">@color/white</item>
+    <style name="Theme.IntegratedAI" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#176B57</item>
+        <item name="colorPrimaryVariant">#105342</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#176B57</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:statusBarColor">#F7F7F8</item>
+        <item name="android:navigationBarColor">#F7F7F8</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>
