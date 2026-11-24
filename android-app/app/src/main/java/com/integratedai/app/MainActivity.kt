@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var analyzeButton: Button
     private lateinit var attachedText: TextView
 
+    private val providerValues = mutableListOf<String>()
     private val pending = mutableListOf<UploadFile>()
     private var sessionId = "android-1"
     private var latestAssistantReply = ""
@@ -130,9 +131,7 @@ class MainActivity : AppCompatActivity() {
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
 
-        providerSpinner.adapter = ArrayAdapter.createFromResource(
-            this, R.array.providers, android.R.layout.simple_spinner_item
-        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        loadProviderOptions()
         agentSpinner.adapter = ArrayAdapter.createFromResource(
             this, R.array.agents, android.R.layout.simple_spinner_item
         ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
@@ -286,8 +285,44 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun loadProviderOptions() {
+        lifecycleScope.launch {
+            val names = linkedMapOf(
+                "openai" to "OpenAI",
+                "gemini" to "Gemini",
+                "claude" to "Claude",
+                "deepseek" to "DeepSeek"
+            )
+            val configured = mutableSetOf<String>()
+            try {
+                val data = JSONObject(client().providers())
+                val providers = data.optJSONObject("providers")
+                names.keys.forEach { key ->
+                    if (providers?.optJSONObject(key)?.optBoolean("configured", false) == true) configured.add(key)
+                }
+            } catch (_: Exception) {
+                // Keep the selector usable if the capability endpoint is temporarily unavailable.
+            }
+            providerValues.clear()
+            providerValues.add("combined")
+            names.keys.forEach { providerValues.add(it) }
+            val labels = mutableListOf("Combined AI Council · ${configured.size}/4 connected")
+            names.forEach { (key, label) ->
+                labels.add("$label · " + if (key in configured) "Configured" else "Not configured")
+            }
+            providerSpinner.adapter = ArrayAdapter(
+                this@MainActivity, android.R.layout.simple_spinner_item, labels
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            statusText.text = "AI providers: ${configured.size} of 4 configured. Combined AI Council uses connected providers only."
+        }
+    }
+
+    private fun selectedProvider(): String =
+        providerValues.getOrNull(providerSpinner.selectedItemPosition) ?: "auto"
+
     private fun checkBackend() {
         statusText.text = "Checking ${store.backendUrl} ..."
+        loadProviderOptions()
         lifecycleScope.launch {
             try {
                 val health = client().health()
@@ -302,7 +337,7 @@ class MainActivity : AppCompatActivity() {
     private fun sendMessage() {
         val text = messageInput.text.toString().trim()
         if (text.isEmpty()) return
-        val provider = providerSpinner.selectedItem.toString()
+        val provider = selectedProvider()
         val agent = agentSpinner.selectedItem.toString()
         adapter.add(ChatMessage("user", text))
         messageInput.text.clear()
@@ -326,7 +361,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val question = messageInput.text.toString().trim()
-        val provider = providerSpinner.selectedItem.toString()
+        val provider = selectedProvider()
         val agent = agentSpinner.selectedItem.toString()
         val files = pending.toList()
         adapter.add(ChatMessage("user", "Analyze: " + files.joinToString(", ") { it.name } +
