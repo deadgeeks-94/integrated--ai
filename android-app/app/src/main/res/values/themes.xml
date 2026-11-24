@@ -4,12 +4,13 @@
         <item name="colorPrimary">#176B57</item>
         <item name="colorPrimaryVariant">#105342</item>
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorSecondary">#176B57</item>
+        <item name="colorSecondary">#23836B</item>
         <item name="android:fontFamily">sans</item>
-        <item name="android:statusBarColor">#F7F7F8</item>
-        <item name="android:navigationBarColor">#F7F7F8</item>
+        <item name="android:statusBarColor">#F4F6F8</item>
+        <item name="android:navigationBarColor">#F4F6F8</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowBackground">#F4F6F8</item>
     </style>
 </resources>
