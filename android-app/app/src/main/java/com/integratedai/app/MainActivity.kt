@@ -1,6 +1,5 @@
 package com.integratedai.app
 
-import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -12,11 +11,13 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
@@ -32,14 +33,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var analyzeButton: Button
     private lateinit var attachedText: TextView
 
-    // Pending attachments (images, pdf, docx, text) read into memory as base64.
-    // Nothing is sent to any AI provider directly; files go only to the backend URL.
     private val pending = mutableListOf<UploadFile>()
-
-    // Project-style session: switch to "project/<name>" for persistent project memory + workspace.
     private var sessionId = "android-1"
+    private var latestAssistantReply = ""
+    private var pendingDownloadBytes: ByteArray? = null
 
-    // Lets the user pick images or documents. May return null entries in extras.
     private val pickFiles = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
@@ -47,8 +45,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             for (uri in uris) {
                 try {
-                    val f = readUri(uri)
-                    pending.add(f)
+                    pending.add(readUri(uri))
                 } catch (e: Exception) {
                     Toast.makeText(this@MainActivity, "Could not read file: ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -57,6 +54,30 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this@MainActivity, "${pending.size} file(s) attached", Toast.LENGTH_SHORT).show()
         }
     }
+
+    private val createWorkspaceDocument = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri: Uri? ->
+        if (uri == null) {
+            pendingDownloadBytes = null
+            return@registerForActivityResult
+        }
+        lifecycleScope.launch {
+            try {
+                val bytes = pendingDownloadBytes ?: throw IllegalStateException("No file data to save.")
+                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: throw IllegalStateException("Could not open the selected destination.")
+                statusText.text = "Workspace file downloaded."
+                Toast.makeText(this@MainActivity, "File saved.", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                statusText.text = "Save download failed: ${e.message}"
+            } finally {
+                pendingDownloadBytes = null
+            }
+        }
+    }
+
+    private fun client() = ApiClient(store.backendUrl, accessTokenInput.text.toString())
 
     private fun readUri(uri: Uri): UploadFile {
         val name = queryDisplayName(uri) ?: "file"
@@ -68,13 +89,7 @@ class MainActivity : AppCompatActivity() {
             "json", "csv", "html", "htm", "js", "ts", "sh", "yml", "yaml", "log",
             "xml", "css", "java", "c", "cpp", "go", "rs", "sql", "ini", "toml", "zip"
         )
-        if (ext !in allowed) {
-            throw IllegalArgumentException(
-                "Unsupported type .$ext. Supported: images (jpg/png/gif/webp), pdf, docx, and text/code files."
-            )
-        }
-        // No hard client cap: the backend enforces its configurable limits
-        // (UPLOAD_MAX_BYTES etc) and reports oversize files clearly.
+        if (ext !in allowed) throw IllegalArgumentException("Unsupported file type: .$ext")
         return UploadFile(name, Base64.encodeToString(bytes, Base64.NO_WRAP))
     }
 
@@ -90,11 +105,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshAttachedLabel() {
-        attachedText.text = if (pending.isEmpty()) {
-            getString(R.string.no_attachments)
-        } else {
-            "Attached: " + pending.joinToString(", ") { it.name }
-        }
+        attachedText.text = if (pending.isEmpty()) getString(R.string.no_attachments)
+        else "Attached: " + pending.joinToString(", ") { it.name }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,7 +123,6 @@ class MainActivity : AppCompatActivity() {
         attachButton = findViewById(R.id.attachButton)
         analyzeButton = findViewById(R.id.analyzeButton)
         attachedText = findViewById(R.id.attachedText)
-
         urlInput.setText(store.backendUrl)
 
         adapter = ChatAdapter()
@@ -120,15 +131,10 @@ class MainActivity : AppCompatActivity() {
         recycler.adapter = adapter
 
         providerSpinner.adapter = ArrayAdapter.createFromResource(
-            this,
-            R.array.providers,
-            android.R.layout.simple_spinner_item
+            this, R.array.providers, android.R.layout.simple_spinner_item
         ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-
         agentSpinner.adapter = ArrayAdapter.createFromResource(
-            this,
-            R.array.agents,
-            android.R.layout.simple_spinner_item
+            this, R.array.agents, android.R.layout.simple_spinner_item
         ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
         findViewById<Button>(R.id.saveUrlButton).setOnClickListener {
@@ -140,52 +146,155 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "URL must start with http:// or https://", Toast.LENGTH_LONG).show()
             }
         }
-
         findViewById<Button>(R.id.checkButton).setOnClickListener { checkBackend() }
-
         findViewById<Button>(R.id.clearButton).setOnClickListener {
             lifecycleScope.launch {
                 try {
-                    ApiClient(store.backendUrl, accessTokenInput.text.toString()).clear(sessionId)
+                    client().clear(sessionId)
                     adapter.clear()
+                    latestAssistantReply = ""
                     statusText.text = "Chat cleared on server."
                 } catch (e: Exception) {
                     statusText.text = "Clear failed: ${e.message}"
                 }
             }
         }
-
+        findViewById<Button>(R.id.projectButton).setOnClickListener { chooseProject() }
+        findViewById<Button>(R.id.memoryButton).setOnClickListener { showMemorySessions() }
+        findViewById<Button>(R.id.workspaceButton).setOnClickListener { showWorkspaceFiles() }
+        findViewById<Button>(R.id.saveReplyButton).setOnClickListener { saveLatestReply() }
         findViewById<Button>(R.id.sendButton).setOnClickListener { sendMessage() }
-
-        attachButton.setOnClickListener {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "*/*"
-                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
-                    "image/*", "application/pdf",
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    "application/zip", "text/*", "application/json", "application/csv"
-                ))
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            }
-            pickFiles.launch(arrayOf("*/*"))
-        }
-
+        attachButton.setOnClickListener { pickFiles.launch(arrayOf("*/*")) }
         analyzeButton.setOnClickListener { analyzeAttachments() }
-
         checkBackend()
+    }
+
+    private fun chooseProject() {
+        val input = EditText(this).apply {
+            hint = "Project name"
+            setText(if (sessionId.startsWith("project/")) sessionId.removePrefix("project/") else "")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Project workspace")
+            .setMessage("Use a project name to keep its conversation memory and files separate.")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Use project") { _, _ ->
+                val name = input.text.toString().trim()
+                    .replace(Regex("[^A-Za-z0-9._-]+"), "-")
+                    .trim('-', '.', '_')
+                if (name.isBlank()) {
+                    Toast.makeText(this, "Enter a valid project name.", Toast.LENGTH_SHORT).show()
+                } else {
+                    sessionId = "project/" + name
+                    adapter.clear()
+                    latestAssistantReply = ""
+                    statusText.text = "Active session: $sessionId"
+                }
+            }
+            .show()
+    }
+
+    private fun saveLatestReply() {
+        if (latestAssistantReply.isBlank()) {
+            Toast.makeText(this, "There is no AI reply to save yet.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val filename = EditText(this).apply {
+            setText("assistant-response.txt")
+            selectAll()
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Save AI reply")
+            .setMessage("Save the latest AI response to this session's workspace.")
+            .setView(filename)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val name = filename.text.toString().trim()
+                lifecycleScope.launch {
+                    try {
+                        client().workspaceSave(sessionId, name, latestAssistantReply)
+                        statusText.text = "Saved $name to workspace."
+                    } catch (e: Exception) {
+                        statusText.text = "Workspace save failed: ${e.message}"
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showWorkspaceFiles() {
+        lifecycleScope.launch {
+            try {
+                val data = JSONObject(client().workspaceList(sessionId))
+                val files = data.optJSONArray("files")
+                if (files == null || files.length() == 0) {
+                    Toast.makeText(this@MainActivity, "This workspace is empty.", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val names = (0 until files.length()).map { files.getJSONObject(it).optString("file") }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Workspace · $sessionId")
+                    .setItems(names.toTypedArray()) { _, which ->
+                        val selected = names[which]
+                        lifecycleScope.launch {
+                            try {
+                                statusText.text = "Downloading $selected ..."
+                                pendingDownloadBytes = client().workspaceDownload(sessionId, selected)
+                                createWorkspaceDocument.launch(selected)
+                            } catch (e: Exception) {
+                                pendingDownloadBytes = null
+                                statusText.text = "Download failed: ${e.message}"
+                            }
+                        }
+                    }
+                    .setNegativeButton("Close", null)
+                    .show()
+            } catch (e: Exception) {
+                statusText.text = "Could not load workspace: ${e.message}"
+            }
+        }
+    }
+
+    private fun showMemorySessions() {
+        lifecycleScope.launch {
+            try {
+                val data = JSONObject(client().memorySessions())
+                val sessions = data.optJSONArray("sessions")
+                if (sessions == null || sessions.length() == 0) {
+                    Toast.makeText(this@MainActivity, "No saved conversation sessions yet.", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val labels = (0 until sessions.length()).map { i ->
+                    val item = sessions.getJSONObject(i)
+                    "${item.optString("session_id")} · ${item.optInt("turns")} turns"
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Saved memory sessions")
+                    .setItems(labels.toTypedArray()) { _, which ->
+                        val selected = sessions.getJSONObject(which).optString("session_id")
+                        sessionId = selected
+                        adapter.clear()
+                        latestAssistantReply = ""
+                        statusText.text = "Active session: $sessionId"
+                    }
+                    .setNegativeButton("Close", null)
+                    .show()
+            } catch (e: Exception) {
+                statusText.text = "Could not load memory sessions: ${e.message}"
+            }
+        }
     }
 
     private fun checkBackend() {
         statusText.text = "Checking ${store.backendUrl} ..."
         lifecycleScope.launch {
             try {
-                val client = ApiClient(store.backendUrl, accessTokenInput.text.toString())
-                val health = client.health()
-                val providers = try { client.providers() } catch (e: Exception) { "(providers endpoint unavailable)" }
+                val health = client().health()
+                val providers = try { client().providers() } catch (e: Exception) { "(providers endpoint unavailable)" }
                 statusText.text = "Health: $health\nProviders: $providers"
             } catch (e: Exception) {
-                statusText.text = "Cannot reach backend at ${store.backendUrl}. Is the Python server running? Emulator note: host localhost is 10.0.2.2, not 127.0.0.1. Error: ${e.message}"
+                statusText.text = "Cannot reach backend at ${store.backendUrl}. Error: ${e.message}"
             }
         }
     }
@@ -195,14 +304,13 @@ class MainActivity : AppCompatActivity() {
         if (text.isEmpty()) return
         val provider = providerSpinner.selectedItem.toString()
         val agent = agentSpinner.selectedItem.toString()
-
         adapter.add(ChatMessage("user", text))
         messageInput.text.clear()
         statusText.text = "Sending to $provider / $agent ..."
-
         lifecycleScope.launch {
             try {
-                val reply = ApiClient(store.backendUrl, accessTokenInput.text.toString()).chat(text, agent, provider, sessionId)
+                val reply = client().chat(text, agent, provider, sessionId)
+                latestAssistantReply = reply
                 adapter.add(ChatMessage("assistant", reply))
                 statusText.text = "Done."
             } catch (e: Exception) {
@@ -221,17 +329,16 @@ class MainActivity : AppCompatActivity() {
         val provider = providerSpinner.selectedItem.toString()
         val agent = agentSpinner.selectedItem.toString()
         val files = pending.toList()
-
         adapter.add(ChatMessage("user", "Analyze: " + files.joinToString(", ") { it.name } +
             if (question.isNotEmpty()) "\n$question" else ""))
         messageInput.text.clear()
         statusText.text = "Uploading ${files.size} file(s) for $provider / $agent analysis ..."
         pending.clear()
         refreshAttachedLabel()
-
         lifecycleScope.launch {
             try {
-                val reply = ApiClient(store.backendUrl, accessTokenInput.text.toString()).analyzeFiles(question, agent, provider, sessionId, files)
+                val reply = client().analyzeFiles(question, agent, provider, sessionId, files)
+                latestAssistantReply = reply
                 adapter.add(ChatMessage("assistant", reply))
                 statusText.text = "Done."
             } catch (e: Exception) {
