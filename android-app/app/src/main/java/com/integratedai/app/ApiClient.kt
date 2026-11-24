@@ -26,8 +26,11 @@ class ApiClient(private val baseUrl: String, private val accessToken: String = "
             readTimeout = 15000
         }
         try {
-            val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
-            return stream.bufferedReader().use { it.readText() }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw IOException("HTTP $code: $text")
+            return text
         } finally {
             conn.disconnect()
         }
@@ -63,16 +66,29 @@ class ApiClient(private val baseUrl: String, private val accessToken: String = "
         }
         try {
             conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
-            val text = stream.bufferedReader().use { it.readText() }
-            return JSONObject(text)
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw IOException("HTTP $code: $text")
+            return try {
+                JSONObject(text)
+            } catch (e: Exception) {
+                throw IOException("Backend returned an unreadable response (HTTP $code): $text", e)
+            }
         } finally {
             conn.disconnect()
         }
     }
 
-    suspend fun health(): String = withContext(Dispatchers.IO) { get("/health") }
+    private fun replyFrom(data: JSONObject): String {
+        if (!data.has("reply") || data.isNull("reply")) {
+            val detail = data.optString("error").ifBlank { data.toString() }
+            throw IOException("Backend response did not contain a reply: $detail")
+        }
+        return data.optString("reply")
+    }
 
+    suspend fun health(): String = withContext(Dispatchers.IO) { get("/health") }
     suspend fun providers(): String = withContext(Dispatchers.IO) { get("/providers") }
 
     suspend fun chat(message: String, agent: String, provider: String, sessionId: String): String =
@@ -83,7 +99,7 @@ class ApiClient(private val baseUrl: String, private val accessToken: String = "
                 put("provider", provider)
                 put("session_id", sessionId)
             }
-            postJson("/chat", body).optString("reply", "(no reply field)")
+            replyFrom(postJson("/chat", body))
         }
 
     /** One-shot file analysis; file bytes go only to the backend. */
@@ -108,17 +124,12 @@ class ApiClient(private val baseUrl: String, private val accessToken: String = "
             put("session_id", sessionId)
             put("files", arr)
         }
-        postJson("/upload/analyze", body, readTimeoutMs = 180000)
-            .optString("reply", "(no reply field)")
+        replyFrom(postJson("/upload/analyze", body, readTimeoutMs = 180000))
     }
 
-    /** Lists files in this session's workspace. */
     suspend fun workspaceList(sessionId: String): String =
-        withContext(Dispatchers.IO) {
-            get("/workspace/list?session_id=" + queryValue(sessionId))
-        }
+        withContext(Dispatchers.IO) { get("/workspace/list?session_id=" + queryValue(sessionId)) }
 
-    /** Saves generated text/code in the session workspace. */
     suspend fun workspaceSave(sessionId: String, filename: String, content: String): String =
         withContext(Dispatchers.IO) {
             val body = JSONObject().apply {
@@ -129,23 +140,17 @@ class ApiClient(private val baseUrl: String, private val accessToken: String = "
             postJson("/workspace/save", body).toString()
         }
 
-    /** Applies one exact text replacement to an existing workspace file. */
-    suspend fun workspaceEdit(
-        sessionId: String,
-        filename: String,
-        oldText: String,
-        newText: String
-    ): String = withContext(Dispatchers.IO) {
-        val body = JSONObject().apply {
-            put("session_id", sessionId)
-            put("filename", filename)
-            put("old_text", oldText)
-            put("new_text", newText)
+    suspend fun workspaceEdit(sessionId: String, filename: String, oldText: String, newText: String): String =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject().apply {
+                put("session_id", sessionId)
+                put("filename", filename)
+                put("old_text", oldText)
+                put("new_text", newText)
+            }
+            postJson("/workspace/edit", body).toString()
         }
-        postJson("/workspace/edit", body).toString()
-    }
 
-    /** Downloads bytes directly with Authorization; do not open the protected URL in a browser. */
     suspend fun workspaceDownload(sessionId: String, filename: String): ByteArray =
         withContext(Dispatchers.IO) {
             val path = "/workspace/download?session_id=" + queryValue(sessionId) +
@@ -153,8 +158,7 @@ class ApiClient(private val baseUrl: String, private val accessToken: String = "
             getBytes(path)
         }
 
-    suspend fun memorySessions(): String =
-        withContext(Dispatchers.IO) { get("/memory/sessions") }
+    suspend fun memorySessions(): String = withContext(Dispatchers.IO) { get("/memory/sessions") }
 
     suspend fun clear(sessionId: String): String = withContext(Dispatchers.IO) {
         postJson("/clear", JSONObject().put("session_id", sessionId), readTimeoutMs = 8000).toString()
