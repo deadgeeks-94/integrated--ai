@@ -1,135 +1,74 @@
 # Integrated AI
 
-A small Python orchestrator that routes tasks to specialist agents and, when configured, to multiple AI providers: OpenAI, Gemini, Claude, and DeepSeek. It does not compile or merge model weights. It orchestrates calls and keeps conversation memory.
+Integrated AI is a Gemini-powered Android AI assistant with a Python backend. It uses one provider (Google Gemini) and specialist modes to adapt its instructions to the task.
 
-## What is implemented
+## Gemini configuration
 
-- OpenAI model routing: original fast/strong routing preserved (`choose_model`, Responses API). `MODEL_FAST` default `gpt-4.1-mini`, `MODEL_STRONG` default `gpt-4.1` (set to IDs your account can use).
-- Gemini integration: optional, via `GEMINI_API_KEY` (or `GOOGLE_API_KEY`), model `MODEL_GEMINI` (default `gemini-2.5-flash`).
-- Claude integration: optional, via `ANTHROPIC_API_KEY`, model `MODEL_CLAUDE` (default `claude-sonnet-4-5`).
-- DeepSeek integration: optional, via `DEEPSEEK_API_KEY`, model `MODEL_DEEPSEEK` (default `deepseek-chat`).
-- Multiple specialist agents: `general`, `coding`, `research`, `security`, `assignment`, each with its own system prompt. Tasks auto-route to an agent; override with `AGENT` env var, `/agent` in the CLI, or the `agent` field in the API.
-- Conversation memory: local JSON file (`MEMORY_FILE`, default `~/.integrated-ai/memory.json`), capped by `MEMORY_MAX_TURNS` (default 20). Stored on your device only. `/clear` or `POST /clear` clears it.
-- File uploads (new): attach images and documents from the web UI, Android app, or API.
-  - Images (`.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`) are sent as real image input to vision-capable models (OpenAI, Gemini, Claude). DeepSeek cannot see images.
-  - Documents/text (`.pdf`, `.docx`, `.txt`, `.md`, `.py`, `.js`, `.ts`, `.json`, `.csv`, `.html`, `.sh`, `.yml`, `.yaml`, `.log`, `.xml`, `.css`, `.java`, `.c`, `.cpp`, `.go`, `.rs`, `.sql`, `.ini`, `.toml`) are text-extracted locally (stdlib-only best-effort for PDF/DOCX) and fed to the model as text.
-  - ZIP archives (`.zip`): member list + text extracted in memory (zip-bomb and path-traversal protected, never written to disk).
-  - Endpoints: `POST /chat` accepts optional `files: [{filename, data_b64}]`; `POST /upload/analyze` takes `{question, files, agent, provider, session_id}`; `POST /process-file` still works (now also accepts `files` or binary `content_base64`). CLI `/analyze <path>` supports the same types.
-  - Validation: extension + magic bytes + size are checked. Files are never executed and never written to disk by the server.
-  - Limits (configurable, generous defaults, no arbitrary low cap): `UPLOAD_MAX_BYTES` (50 MB/file), `MAX_UPLOAD_FILES` (10/request), `UPLOAD_TOTAL_MAX_BYTES` (200 MB/request), `MAX_FILE_BYTES` (200000, text-per-prompt cap). Raise them as high as your provider and server allow.
-  - Honest truth about limits: raising these only raises THIS server's limits. Every AI provider has its own hard limits (context window, image size/count rules, request size caps), and the server keeps safety limits too. No app setting can remove provider limits. Practical defaults are set so normal photos, PDFs and assignments work; raise the env vars if your provider allows larger files.
-  - Capability matrix: `GET /providers` returns each provider's `vision: true/false`, the supported extensions, the active limits, and notes. `GET /health` includes the limits.
-  - Auto routing with images: with `provider=auto`, an image upload picks a configured vision provider (OpenAI, then Gemini, then Claude). With no vision provider configured it explains what to set instead of faking an answer. Selecting `deepseek` with an image says plainly DeepSeek cannot analyze images.
-  - Android app: Attach file button picks images/documents (multi-select), Analyze files sends them to `POST /upload/analyze`. No API keys in the app, ever.
-- API/backend server: `python main.py serve` starts it on `HOST:PORT` (default `0.0.0.0:8000`). Set `APP_ACCESS_TOKEN` to require `Authorization: Bearer <token>` on every endpoint except `/` and `/health`. In production, also set `APP_ENV=production`; the server refuses to start without `APP_ACCESS_TOKEN`. Basic per-IP in-memory rate limiting defaults to 60 requests per 60 seconds and is configurable with `RATE_LIMIT_MAX_REQUESTS` and `RATE_LIMIT_WINDOW_SECONDS`. The rate limiter is per process and is not a replacement for a production gateway/WAF. The browser UI and Android app provide a password field; the Android token is held only in memory and must be re-entered after restart. Use HTTPS for any remote deployment. Endpoints: `GET /`, `GET /health`, `GET /providers`, `GET /memory/sessions`, `GET /workspace/list`, `GET /workspace/download`, `POST /chat`, `POST /upload/analyze`, `POST /process-file`, `POST /workspace/save`, `POST /workspace/edit`, `POST /clear`.
-- Mobile web interface: open `http://<your-computer-ip>:8000` in a browser on the same Wi-Fi. A separate native Kotlin Android client is included under `android-app/`; it connects to this Python backend.
+Set these variables in your hosting provider (Railway):
 
-## Setup
+- `GEMINI_API_KEY` — required secret.
+- `MODEL_GEMINI` — optional model ID; defaults to `gemini-2.5-flash`.
+- `APP_ENV=production` and `APP_ACCESS_TOKEN` — required for a protected public deployment.
+- `PORT` — supplied by Railway.
 
-1. Install Python 3.10+.
-2. `python -m venv .venv && source .venv/bin/activate` (Windows: `.venv\Scripts\activate`).
-3. `pip install -r requirements.txt`
-4. Set API keys as environment variables only. Never paste keys into source files:
+Never put the Gemini API key in the Android app, GitHub, or a source file. Keep it in Railway's private Variables panel.
 
-   ```bash
-   export OPENAI_API_KEY="..."
-   export GEMINI_API_KEY="..."
-   export ANTHROPIC_API_KEY="..."
-   export DEEPSEEK_API_KEY="..."
-   ```
+## Specialist modes
 
-   On Windows PowerShell use `$env:OPENAI_API_KEY="..."` instead of `export`.
+The app sends every request to Gemini. The selected mode changes the system instructions:
 
-5. Optionally override models and behavior:
+- General
+- Coding
+- Research
+- Security
+- Assignment
+- Study
+- Arabic (Nahw, Sarf and I'rab)
+- Math
+- Writing
 
-   ```bash
-   export MODEL_FAST="gpt-4.1-mini" MODEL_STRONG="gpt-4.1"
-   export MODEL_GEMINI="gemini-2.5-flash" MODEL_CLAUDE="claude-sonnet-4-5" MODEL_DEEPSEEK="deepseek-chat"
-   export PROVIDER="auto"   # or openai | gemini | claude | deepseek
-   export AGENT="general"   # or coding | research | security
-   export PORT="8000"
-   export APP_ENV="production" APP_ACCESS_TOKEN="generate-a-long-random-token"
-   export RATE_LIMIT_MAX_REQUESTS="60" RATE_LIMIT_WINDOW_SECONDS="60"
-   export UPLOAD_MAX_BYTES="52428800" MAX_UPLOAD_FILES="10" UPLOAD_TOTAL_MAX_BYTES="209715200"
-   ```
+These modes are task-specific instructions, not separate models. They do not increase the underlying model's intelligence or remove its API quotas.
 
-6. Run the CLI: `python main.py`
-   Or run the server: `python main.py serve`, then open `http://localhost:8000` (or your computer's LAN IP from an Android phone).
+## Features
 
-## Missing provider keys
+- Gemini text and image input.
+- Text extraction from PDF, DOCX, TXT, Markdown, CSV, JSON, HTML and source-code files.
+- ZIP inspection with path-traversal and archive-size protections.
+- Per-session conversation history.
+- Project sessions using IDs such as `project/my-project`.
+- Workspace save, list, edit and download endpoints.
+- Android chat interface with specialist modes and multi-file attachment support.
+- Bearer-token authentication for protected backend endpoints.
 
-This scaffold includes no credentials and makes no paid calls by itself.
+## Run locally
 
-- If a provider has no key, the app says exactly which env var to set (for example `set GEMINI_API_KEY ...`) and sends no request to it.
-- With `PROVIDER=auto` (default) it uses a configured provider if one exists, preferring OpenAI for general tasks, an agent's preferred provider (research prefers Gemini), and DeepSeek/Claude for coding tasks.
-- With no keys at all, every answer explains what is missing. Nothing is faked.
-- Each provider is called only when you run the app with that key set, so cost stays under your control.
+1. Install Python 3.10 or later.
+2. Set `GEMINI_API_KEY` in your environment.
+3. Optionally set `APP_ENV=production` and `APP_ACCESS_TOKEN`.
+4. Run `python main.py serve`.
 
-## API examples
+The server listens on `0.0.0.0:$PORT` (default port 8000).
 
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message": "Explain this error", "agent": "coding"}'
+## API
 
-curl -X POST http://localhost:8000/process-file \
-  -H 'Content-Type: application/json' \
-  -d '{"filename": "notes.txt", "content": "...", "question": "Summarize this"}'
+- `GET /` — lightweight browser tester.
+- `GET /health` — public health check.
+- `GET /providers` — Gemini configuration and capability information (requires auth in production).
+- `POST /chat` — send a message; all requests route to Gemini.
+- `POST /upload/analyze` — analyse uploaded files with Gemini.
+- `GET /memory/sessions` — list session summaries.
+- `GET /workspace/list`, `GET /workspace/download`.
+- `POST /workspace/save`, `POST /workspace/edit`, `POST /clear`.
 
-# image + question in one chat call (base64 the file first, e.g. `base64 -w0 photo.png`)
-curl -X POST http://localhost:8000/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message": "What does this image show?", "files": [{"filename": "photo.png", "data_b64": "<BASE64>"}]}'
+## Important limitations
 
-# dedicated upload analysis
-curl -X POST http://localhost:8000/upload/analyze \
-  -H 'Content-Type: application/json' \
-  -d '{"question": "Summarize this PDF", "files": [{"filename": "doc.pdf", "data_b64": "<BASE64>"}]}'
-```
+- Gemini API quotas, model availability, safety rules, context limits and rate limits still apply. App-side changes cannot bypass them.
+- Free-tier availability and limits depend on Google's current terms, model and region.
+- This backend does not currently perform live web search or guarantee source citations.
+- PDF/DOCX extraction is best-effort; scanned PDFs need OCR, which is not included.
+- Conversation memory and workspace files need a persistent Railway volume to survive service replacement/redeployment. Without one, local container storage may be temporary.
+- Specialist modes improve task framing and answer structure; they are not independent expert models.
 
-## Workspace and projects
+## Tests and Android build
 
-- Generated files: `POST /workspace/save {session_id, filename, content}` saves model-generated text/code into the session workspace; `POST /workspace/edit {session_id, filename, old_text, new_text}` patches a saved file; `GET /workspace/list?session_id=X` lists files; `GET /workspace/download?session_id=X&file=Y` downloads with an attachment header.
-- Paths are clamped to the workspace directory (`WORKSPACE_DIR`, default `~/.integrated-ai/workspace`); traversal attempts are rejected with 404/400.
-- Project conversations: use `session_id` of the form `project/<name>` (e.g. `project/my-assignment`) for persistent memory plus its own workspace folder. `GET /memory/sessions` lists sessions and turn counts. This is how coding projects, assignments, and research workspaces stay organized and resumable.
-- Assignment/research help is the `assignment` agent; coding generation/editing/debugging works through the `coding` agent plus workspace save/edit endpoints.
-
-## CLI commands
-
-- `/agent coding|research|security|general` switch specialist
-- `/provider openai|gemini|claude|deepseek|auto` switch provider
-- `/analyze <path>` analyze a local text, document (pdf/docx), or image file
-- `/memory` show stored turn count
-- `/clear` clear memory
-- `quit` / `exit` leave
-
-## Honest limitations
-
-- The native Android source is included. A successful GitHub Actions run can produce a debug APK artifact; installation and runtime behavior must still be tested on a physical device.
-- File uploads are size/count limited (see the limits section above). PDF/DOCX extraction is best-effort stdlib-only text extraction: scanned/image PDFs need OCR (not included), and some PDF layouts may extract imperfectly. No vector search.
-- Memory is local JSON on one device, not shared across devices or users.
-- Provider integrations are basic chat completions; no streaming, tools, or function calling yet.
-- Authentication is optional in development when `APP_ACCESS_TOKEN` is unset. For public hosting, set `APP_ENV=production` and a strong `APP_ACCESS_TOKEN`; the server fails closed if production mode has no token. `/` and `/health` are public for the landing page and host health checks. HTTPS is required for remote use. The built-in in-memory rate limit is a basic safeguard, not a distributed abuse-prevention system.
-- Model names are configurable defaults. If a default is not available on your account, set the matching `MODEL_*` variable.
-
-## GitHub and automated builds
-
-Two GitHub Actions workflows are included:
-
-- `Backend tests` runs `python tests/test_uploads.py` on pushes and pull requests.
-- `Android debug APK` builds the Kotlin app with Java 17, Android SDK 34 and Gradle 8.7. The APK is uploaded as a workflow artifact named `integrated-ai-debug-apk`.
-
-To use them, upload the contents of this `integrated-ai/` folder to the root of a GitHub repository. Push to `main` or `master`, then open the repository's **Actions** tab. After the Android workflow succeeds, open its run and download the APK artifact.
-
-## Deployment notes
-
-The backend includes optional bearer-token authentication and a basic per-process, per-IP rate limiter. Before public deployment:
-
-1. Set `APP_ENV=production` and configure a long, random `APP_ACCESS_TOKEN` as a hosting secret. The server refuses to start in production if the token is missing.
-2. Keep provider keys (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`) only in the host's secret/environment-variable settings. Never commit them or embed them in the APK.
-3. Set the service start command to `python main.py serve`. The server reads the host-provided `PORT` environment variable and listens on `0.0.0.0` by default. `GET /health` is public for host health checks; other API endpoints require the bearer token.
-4. Attach persistent storage before relying on memory or workspace files. Set `MEMORY_FILE` and `WORKSPACE_DIR` to paths on that mounted volume; otherwise local files may be lost when the service is recreated.
-5. The built-in rate limiter is in-memory and per process. It is only a basic safeguard, not distributed abuse protection. Use the host's additional network/security controls where available.
-6. Use HTTPS for all remote app connections. Do not deploy until the environment variables, storage, and access controls have been reviewed.
-
-The README may lag behind code as features evolve; verify the current implementation and hosting configuration before deployment.
+The GitHub Actions workflows run backend tests and build a debug Android APK. A successful build verifies compilation, not all on-device runtime behavior. Install and test on a physical Android device before treating the release as complete.
