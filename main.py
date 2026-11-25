@@ -190,11 +190,9 @@ def capabilities():
         "projects": {"note": "Use session_id values such as project/my-project to group conversations."}
     }
 
-def missing_key_message(provider: str) -> str:
-    return (
-        f"{DISPLAY_NAMES.get(provider, provider)} is not configured: set {KEY_ENV[provider]} in your "
-        f"environment to enable it. No request was sent. See README.md."
-    )
+def missing_key_message(provider="gemini"):
+    return "Gemini is not configured: add GEMINI_API_KEY to your Railway service variables."
+
 
 
 def _http_json(url, headers, payload, timeout=60):
