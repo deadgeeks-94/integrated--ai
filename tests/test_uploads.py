@@ -21,6 +21,14 @@ def expect_value_error(fn, label):
     raise SystemExit(f"FAIL {label}: expected ValueError")
 
 
+def test_gemini_only_configuration():
+    caps = main.capabilities()
+    assert caps["provider"] == "gemini"
+    assert list(caps["providers"].keys()) == ["gemini"]
+    assert {"coding", "research", "study", "arabic", "math"}.issubset(set(caps["agents"]))
+    print("PASS Gemini-only provider and specialist modes")
+
+
 def test_validation():
     att = main.validate_attachment("photo.png", PNG)
     assert att["mime"] == "image/png" and att["kind"] == "image"
@@ -79,6 +87,7 @@ def test_http():
 
 
 if __name__ == "__main__":
+    test_gemini_only_configuration()
     test_validation()
     test_zip()
     test_no_key_paths()
