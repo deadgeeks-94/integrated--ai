@@ -42,7 +42,6 @@ import json
 import os
 import hmac
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import re
 import zipfile
@@ -164,11 +163,8 @@ def choose_provider(task: str, agent: str = "general") -> str:
     return "gemini"
 
 
-DISPLAY_NAMES = {"openai": "OpenAI", "gemini": "Gemini", "claude": "Claude", "deepseek": "DeepSeek"}
 
-
-
-VISION_PROVIDERS = ("openai", "gemini", "claude")  # DeepSeek chat API has no image input
+VISION_PROVIDERS = ("gemini",)
 IMAGE_MIME_BY_EXT = {
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
     ".gif": "image/gif", ".webp": "image/webp",
@@ -212,37 +208,6 @@ def _http_json(url, headers, payload, timeout=60):
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
-
-
-def _openai_input(messages):
-    out = []
-    for m in messages:
-        if m.get("attachments"):
-            parts = [{"type": "input_text", "text": m.get("content", "")}]
-            for a in m["attachments"]:
-                if a.get("mime") in IMAGE_MIMES and a.get("data_b64"):
-                    parts.append({"type": "input_image",
-                                  "image_url": f"data:{a['mime']};base64,{a['data_b64']}"})
-                elif a.get("kind") == "text" and a.get("text"):
-                    parts.append({"type": "input_text",
-                                  "text": f"[attachment {a.get('name')}]\n{a['text']}"})
-            out.append({"role": m["role"], "content": parts})
-        else:
-            out.append({"role": m["role"], "content": m.get("content", "")})
-    return out
-
-
-def _call_openai(messages, task):
-    if not OPENAI_KEY:
-        return missing_key_message("openai")
-    try:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=OPENAI_KEY)
-        response = client.responses.create(model=choose_model(task), input=_openai_input(messages))
-        return response.output_text
-    except Exception as exc:  # keep CLI/server alive, surface the cause
-        return f"OpenAI error: {exc}"
 
 
 def _call_gemini(messages, task):
@@ -292,70 +257,6 @@ def _call_gemini(messages, task):
 
 
 
-def _call_claude(messages, task):
-    if not ANTHROPIC_KEY:
-        return missing_key_message("claude")
-    try:
-        system = AGENTS.get(agent_for(task), AGENTS["general"])["system"]
-        payload_messages = []
-        for m in messages:
-            if m["role"] not in ("user", "assistant"):
-                continue
-            blocks = [{"type": "text", "text": m.get("content", "")}]
-            for a in m.get("attachments", []):
-                if a.get("mime") in IMAGE_MIMES and a.get("data_b64"):
-                    blocks.append({"type": "image", "source": {"type": "base64",
-                                     "media_type": a["mime"], "data": a["data_b64"]}})
-                elif a.get("kind") == "text" and a.get("text"):
-                    blocks.append({"type": "text",
-                                   "text": f"[attachment {a.get('name')}]\n{a['text']}"})
-            payload_messages.append({"role": m["role"], "content": blocks})
-        data = _http_json(
-            "https://api.anthropic.com/v1/messages",
-            {"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01"},
-            {
-                "model": MODEL_CLAUDE,
-                "max_tokens": 1024,
-                "system": system,
-                "messages": payload_messages,
-            },
-        )
-        return "".join(block.get("text", "") for block in data.get("content", []))
-    except Exception as exc:
-        return f"Claude error: {exc}"
-
-
-def _call_deepseek(messages, task):
-    if not DEEPSEEK_KEY:
-        return missing_key_message("deepseek")
-    if any(a.get("mime") in IMAGE_MIMES for m in messages for a in m.get("attachments", [])):
-        return ("DeepSeek cannot analyze images: its chat API has no image input. "
-                "Use provider openai, gemini, or claude (or auto, which picks a configured vision provider).")
-    folded = []
-    for m in messages:
-        text = m.get("content", "")
-        for a in m.get("attachments", []):
-            if a.get("kind") == "text" and a.get("text"):
-                text += f"\n[attachment {a.get('name')}]\n{a['text']}"
-        folded.append({"role": m["role"], "content": text})
-    try:
-        data = _http_json(
-            "https://api.deepseek.com/chat/completions",
-            {"Authorization": f"Bearer {DEEPSEEK_KEY}"},
-            {"model": MODEL_DEEPSEEK, "messages": folded},
-        )
-        return data["choices"][0]["message"]["content"]
-    except Exception as exc:
-        return f"DeepSeek error: {exc}"
-
-
-PROVIDERS = {
-    "openai": _call_openai,
-    "gemini": _call_gemini,
-    "claude": _call_claude,
-    "deepseek": _call_deepseek,
-}
-
 
 def agent_for(task: str) -> str:
     low = task.lower()
@@ -366,65 +267,6 @@ def agent_for(task: str) -> str:
     if any(w in low for w in ("security", "vulnerability", "exploit", "harden", "devops", "auth")):
         return "security"
     return "general"
-
-
-def choose_vision_provider(task, agent):
-    if PROVIDER_OVERRIDE in VISION_PROVIDERS and KEYS[PROVIDER_OVERRIDE]:
-        return PROVIDER_OVERRIDE
-    for name in ("openai", "gemini", "claude"):
-        if KEYS[name]:
-            return name
-    return None
-
-
-def _is_provider_error(reply: str) -> bool:
-    return reply.startswith(("OpenAI error", "Gemini error", "Claude error", "DeepSeek error")) or "is not configured" in reply or "cannot analyze images" in reply
-
-
-def combined_answer(messages, task):
-    """Run every configured provider in parallel, then synthesise their answers."""
-    configured = available_providers()
-    unavailable = [name for name in PROVIDERS if name not in configured]
-    if not configured:
-        return "Combined AI Council is not ready: no AI providers are configured yet."
-    if len(configured) == 1:
-        only = configured[0]
-        reply = PROVIDERS[only](messages, task)
-        if _is_provider_error(reply):
-            return f"Combined AI Council could not get a response from {DISPLAY_NAMES[only]}: {reply}"
-        return (f"Combined AI Council · 1 of 4 providers connected\n"
-                f"Only {DISPLAY_NAMES[only]} is configured, so this is a single-model answer for now. "
-                f"Configure more providers to enable cross-model comparison.\n\n{reply}")
-
-    results = {}
-    with ThreadPoolExecutor(max_workers=len(configured)) as pool:
-        futures = {pool.submit(PROVIDERS[name], messages, task): name for name in configured}
-        for future in as_completed(futures):
-            name = futures[future]
-            try:
-                results[name] = future.result()
-            except Exception as exc:
-                results[name] = f"{DISPLAY_NAMES[name]} error: {exc}"
-    successful = {name: value for name, value in results.items() if not _is_provider_error(value)}
-    if not successful:
-        details = "\n".join(f"{DISPLAY_NAMES[n]}: {results[n]}" for n in configured)
-        return "Combined AI Council: all configured providers failed.\n" + details
-
-    synthesis_provider = next((n for n in ("openai", "gemini", "claude", "deepseek") if n in successful), None)
-    source_text = "\n\n".join(f"--- {DISPLAY_NAMES[n]} response ---\n{successful[n]}" for n in successful)
-    synthesis_messages = [
-        {"role": "system", "content": "You are the synthesis editor for a multi-model research council. Compare the supplied model responses. Identify agreement and disagreement, correct obvious inconsistencies, preserve important nuance, and produce one clear, well-structured answer. Do not claim external verification or citations that are not present in the supplied material."},
-        {"role": "user", "content": f"Original question:\n{task}\n\nResponses from the configured models:\n{source_text}\n\nSynthesize these into one answer. Briefly note meaningful disagreements or uncertainty."}
-    ]
-    synthesis = PROVIDERS[synthesis_provider](synthesis_messages, task)
-    consulted = ", ".join(DISPLAY_NAMES[n] for n in successful)
-    unavailable_note = ("\nNot configured: " + ", ".join(DISPLAY_NAMES[n] for n in unavailable) + ".") if unavailable else ""
-    if _is_provider_error(synthesis):
-        body = "\n\n".join(f"**{DISPLAY_NAMES[n]}**\n{successful[n]}" for n in successful)
-        return (f"Combined AI Council · responses collected from: {consulted}. "
-                f"Synthesis by {DISPLAY_NAMES[synthesis_provider]} failed, so individual answers are shown.{unavailable_note}\n\n{body}")
-    return (f"Combined AI Council · models consulted: {consulted}. "
-            f"Synthesised by {DISPLAY_NAMES[synthesis_provider]}.{unavailable_note}\n\n{synthesis}")
 
 
 def answer(task: str, agent=None, provider=None, session_id="cli", attachments=None) -> str:
