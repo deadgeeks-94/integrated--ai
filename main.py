@@ -1,7 +1,6 @@
 """Integrated AI orchestrator (scaffold).
 
-Routes each task to a specialist agent and, if configured, to a provider:
-OpenAI (original routing, preserved), Gemini, Claude, or DeepSeek.
+Routes every task through Google Gemini with specialist task instructions.
 
 No provider is called without its own API key. Missing keys are reported
 plainly; nothing is faked. All keys and model names come from environment
@@ -13,7 +12,6 @@ Run modes:
 
 CLI commands:
   /agent coding|research|security|general   switch specialist
-  /provider openai|gemini|claude|deepseek|auto
   /analyze <path>           read a local text/image/document file and ask about it
   /memory                   show turn count
   /clear                    clear this session's memory
@@ -29,7 +27,7 @@ Environment variables (all optional, see README.md):
   UPLOAD_TOTAL_MAX_BYTES (200 MB total per request). All configurable; provider limits still apply.
   WORKSPACE_DIR: where generated files are saved for download (default ~/.integrated-ai/workspace).
   Sessions like "project/<name>" give persistent project conversations with their own workspace.
-  Uploads: images (jpg/jpeg/png/gif/webp) are sent to vision-capable providers;
+  Uploads: images (jpg/jpeg/png/gif/webp) are sent to Gemini;
   pdf/docx/txt/md/csv/json/html/code/log are text-extracted. PDF/docx extraction
   is stdlib-only best-effort. See README.md for provider capability matrix.
   No limit in this app can remove a provider's own size/model limits.
@@ -60,7 +58,7 @@ from pathlib import Path
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
 
-# Original OpenAI routing, preserved. Set to model IDs your account can use.
+# Gemini-only configuration.
 MODEL_GEMINI = os.getenv("MODEL_GEMINI", "gemini-2.5-flash")
 
 AGENT_OVERRIDE = os.getenv("AGENT", "general").lower()
@@ -144,12 +142,12 @@ class ConversationMemory:
 memory = ConversationMemory().load()
 
 # --------------------------------------------------------------------------
-# Provider routing (original OpenAI routing preserved)
+# Gemini-only provider routing
 # --------------------------------------------------------------------------
 
 
 def choose_model(task: str) -> str:
-    """Original OpenAI fast/strong routing baseline."""
+    """Gemini is the sole configured provider."""
     keywords = ("debug", "architecture", "analyze", "complex", "reason")
     return STRONG_MODEL if any(k in task.lower() for k in keywords) else FAST_MODEL
 
@@ -738,7 +736,7 @@ class Handler(BaseHTTPRequestHandler):
                 if data.get("files"):
                     reply = analyze_attachments(
                         str(data.get("question", "Analyze these files.")), data,
-                        agent=data.get("agent"), provider=data.get("provider"),
+                        agent=data.get("agent"), provider="gemini",
                         session_id=str(data.get("session_id", "web")),
                     )
                     return self._json(200, {"reply": reply})
@@ -753,7 +751,7 @@ class Handler(BaseHTTPRequestHandler):
                         content = None
                         reply = analyze_attachments(
                             str(data.get("question", "Analyze this image.")), {"files": [data]},
-                            agent=data.get("agent"), provider=data.get("provider"),
+                            agent=data.get("agent"), provider="gemini",
                             session_id=str(data.get("session_id", "web")),
                         )
                         return self._json(200, {"reply": reply})
