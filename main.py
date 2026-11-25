@@ -59,7 +59,7 @@ from pathlib import Path
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
 
 # Gemini-only configuration.
-MODEL_GEMINI = os.getenv("MODEL_GEMINI", "gemini-2.5-flash")
+MODEL_GEMINI = os.getenv("MODEL_GEMINI", "gemini-3.8-flash")
 
 AGENT_OVERRIDE = os.getenv("AGENT", "general").lower()
 MEMORY_FILE = os.getenv("MEMORY_FILE", str(Path.home() / ".integrated-ai" / "memory.json"))
