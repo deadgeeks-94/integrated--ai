@@ -248,6 +248,16 @@
                 android:textColor="#202123" />
 
             <Button
+                android:id="@+id/analyzeButton"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:gravity="start|center_vertical"
+                android:text="✧   Analyze attachments"
+                android:textAllCaps="false"
+                android:textColor="#202123" />
+
+            <Button
                 android:id="@+id/libraryButton"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="match_parent"
