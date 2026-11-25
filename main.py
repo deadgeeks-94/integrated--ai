@@ -593,12 +593,15 @@ button{padding:10px 16px;font-size:16px}
 <div id="log">Ask a question, or attach images and documents.</div>
 <select id="agent"><option>general</option><option>coding</option><option>research</option><option>security</option><option>assignment</option></select>
 <p>Powered by Google Gemini</p>
-<input type="password" id="token" placeholder="Backend access token (not saved)">
+<input type="password" id="token" placeholder="Backend access token (saved on this device)">
 <textarea id="q" rows="3" placeholder="Type a message"></textarea>
 <input type="file" id="f" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.docx,.txt,.md,.py,.json,.csv,.html,.js,.sh,.yml,.yaml,.log">
 <button onclick="send()">Send (with attachments if selected)</button>
 <script>
 function b64(buf){let b='';const bytes=new Uint8Array(buf);for(let i=0;i<bytes.length;i+=0x8000){b+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));}return btoa(b);}
+const tokenInput=document.getElementById('token');
+try{tokenInput.value=localStorage.getItem('integrated_ai_access_token')||'';}catch(e){}
+tokenInput.addEventListener('input',()=>{try{if(tokenInput.value)localStorage.setItem('integrated_ai_access_token',tokenInput.value);else localStorage.removeItem('integrated_ai_access_token');}catch(e){}});
 async function send(){
  const files=[...document.getElementById('f').files];
  const payload={message:document.getElementById('q').value,agent:document.getElementById('agent').value};
