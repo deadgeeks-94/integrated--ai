@@ -12,6 +12,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
+import androidx.drawerlayout.widget.DrawerLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -32,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var attachButton: Button
     private lateinit var analyzeButton: Button
     private lateinit var attachedText: TextView
+    private lateinit var drawerLayout: DrawerLayout
 
     private val providerValues = mutableListOf<String>()
     private val pending = mutableListOf<UploadFile>()
@@ -115,6 +117,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         store = SettingsStore(this)
+        drawerLayout = findViewById(R.id.drawerLayout)
         statusText = findViewById(R.id.statusText)
         urlInput = findViewById(R.id.backendUrlInput)
         accessTokenInput = findViewById(R.id.accessTokenInput)
@@ -146,7 +149,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
         findViewById<Button>(R.id.checkButton).setOnClickListener { checkBackend() }
+        findViewById<Button>(R.id.menuButton).setOnClickListener { drawerLayout.open() }
         findViewById<Button>(R.id.clearButton).setOnClickListener {
+            drawerLayout.closeDrawers()
             lifecycleScope.launch {
                 try {
                     client().clear(sessionId)
@@ -158,10 +163,54 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        findViewById<Button>(R.id.projectButton).setOnClickListener { chooseProject() }
-        findViewById<Button>(R.id.memoryButton).setOnClickListener { showMemorySessions() }
-        findViewById<Button>(R.id.workspaceButton).setOnClickListener { showWorkspaceFiles() }
-        findViewById<Button>(R.id.saveReplyButton).setOnClickListener { saveLatestReply() }
+        findViewById<Button>(R.id.newChatMenuButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            findViewById<Button>(R.id.clearButton).performClick()
+        }
+        findViewById<Button>(R.id.searchChatsButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            showMemorySessions()
+        }
+        findViewById<Button>(R.id.imagesButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            pickFiles.launch(arrayOf("image/*"))
+        }
+        findViewById<Button>(R.id.libraryButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            showWorkspaceFiles()
+        }
+        findViewById<Button>(R.id.customizeButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            AlertDialog.Builder(this)
+                .setTitle("Customize Integrated AI")
+                .setMessage("Choose your AI provider and assistant style from the selectors above the conversation. More appearance and behavior options can be added here.")
+                .setPositiveButton("Got it", null)
+                .show()
+        }
+        findViewById<Button>(R.id.remoteButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            Toast.makeText(this, "Remote tools are not configured yet.", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.exploreButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            Toast.makeText(this, "Explore will be added in a later update.", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.projectButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            chooseProject()
+        }
+        findViewById<Button>(R.id.memoryButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            showMemorySessions()
+        }
+        findViewById<Button>(R.id.workspaceButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            showWorkspaceFiles()
+        }
+        findViewById<Button>(R.id.saveReplyButton).setOnClickListener {
+            drawerLayout.closeDrawers()
+            saveLatestReply()
+        }
         findViewById<Button>(R.id.sendButton).setOnClickListener { sendMessage() }
         attachButton.setOnClickListener { pickFiles.launch(arrayOf("*/*")) }
         analyzeButton.setOnClickListener { analyzeAttachments() }
