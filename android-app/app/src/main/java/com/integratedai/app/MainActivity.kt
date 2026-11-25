@@ -7,7 +7,6 @@ import android.util.Base64
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,14 +27,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var urlInput: EditText
     private lateinit var accessTokenInput: EditText
     private lateinit var messageInput: EditText
-    private lateinit var providerSpinner: Spinner
     private lateinit var agentSpinner: Spinner
     private lateinit var attachButton: Button
     private lateinit var analyzeButton: Button
     private lateinit var attachedText: TextView
     private lateinit var drawerLayout: DrawerLayout
 
-    private val providerValues = mutableListOf<String>()
     private val pending = mutableListOf<UploadFile>()
     private var sessionId = "android-1"
     private var latestAssistantReply = ""
@@ -122,7 +119,6 @@ class MainActivity : AppCompatActivity() {
         urlInput = findViewById(R.id.backendUrlInput)
         accessTokenInput = findViewById(R.id.accessTokenInput)
         messageInput = findViewById(R.id.messageInput)
-        providerSpinner = findViewById(R.id.providerSpinner)
         agentSpinner = findViewById(R.id.agentSpinner)
         attachButton = findViewById(R.id.attachButton)
         analyzeButton = findViewById(R.id.analyzeButton)
@@ -335,39 +331,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadProviderOptions() {
-        lifecycleScope.launch {
-            val names = linkedMapOf(
-                "openai" to "OpenAI",
-                "gemini" to "Gemini",
-                "claude" to "Claude",
-                "deepseek" to "DeepSeek"
-            )
-            val configured = mutableSetOf<String>()
-            try {
-                val data = JSONObject(client().providers())
-                val providers = data.optJSONObject("providers")
-                names.keys.forEach { key ->
-                    if (providers?.optJSONObject(key)?.optBoolean("configured", false) == true) configured.add(key)
-                }
-            } catch (_: Exception) {
-                // Keep the selector usable if the capability endpoint is temporarily unavailable.
-            }
-            providerValues.clear()
-            providerValues.add("combined")
-            names.keys.forEach { providerValues.add(it) }
-            val labels = mutableListOf("Combined AI Council · ${configured.size}/4 connected")
-            names.forEach { (key, label) ->
-                labels.add("$label · " + if (key in configured) "Configured" else "Not configured")
-            }
-            providerSpinner.adapter = ArrayAdapter(
-                this@MainActivity, android.R.layout.simple_spinner_item, labels
-            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-            statusText.text = "AI providers: ${configured.size} of 4 configured. Combined AI Council uses connected providers only."
-        }
+        statusText.text = "Powered by Google Gemini"
     }
 
-    private fun selectedProvider(): String =
-        providerValues.getOrNull(providerSpinner.selectedItemPosition) ?: "auto"
+    private fun selectedProvider(): String = "gemini"
 
     private fun checkBackend() {
         statusText.text = "Checking ${store.backendUrl} ..."
@@ -390,7 +357,7 @@ class MainActivity : AppCompatActivity() {
         val agent = agentSpinner.selectedItem.toString()
         adapter.add(ChatMessage("user", text))
         messageInput.text.clear()
-        statusText.text = "Sending to $provider / $agent ..."
+        statusText.text = "Sending to Gemini · $agent ..."
         lifecycleScope.launch {
             try {
                 val reply = client().chat(text, agent, provider, sessionId)
@@ -416,7 +383,7 @@ class MainActivity : AppCompatActivity() {
         adapter.add(ChatMessage("user", "Analyze: " + files.joinToString(", ") { it.name } +
             if (question.isNotEmpty()) "\n$question" else ""))
         messageInput.text.clear()
-        statusText.text = "Uploading ${files.size} file(s) for $provider / $agent analysis ..."
+        statusText.text = "Sending ${files.size} file(s) to Gemini · $agent ..."
         pending.clear()
         refreshAttachedLabel()
         lifecycleScope.launch {
