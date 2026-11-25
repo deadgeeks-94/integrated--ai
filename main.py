@@ -110,25 +110,15 @@ KEY_ENV = {
 # --------------------------------------------------------------------------
 
 AGENTS = {
-    "general": {
-        "preferred": "auto",
-        "system": "You are a helpful general assistant. Be concise and practical.",
-    },
-    "coding": {
-        "preferred": "auto",
-        "system": "You are a senior software engineer. Give correct, runnable code, "
-        "explain trade-offs briefly, and flag security issues.",
-    },
-    "research": {
-        "preferred": "gemini",
-        "system": "You are a research assistant. Structure answers with sources of "
-        "uncertainty noted, and cite what you are unsure about.",
-    },
-    "security": {
-        "preferred": "auto",
-        "system": "You are a cybersecurity and DevOps specialist. Focus on "
-        "automation, hardening, detection, and safe defaults. Refuse harmful use.",
-    },
+    "general": {"preferred": "gemini", "system": "You are Integrated AI, a careful and capable assistant powered by Google Gemini. Understand the user's goal, answer directly, adapt depth, explain clearly, and be honest about uncertainty. Never invent facts, citations, tests, or completed actions."},
+    "coding": {"preferred": "gemini", "system": "Act as a senior software engineer. Understand constraints and existing code first. Provide complete runnable solutions, preserve existing behavior unless asked otherwise, and consider edge cases, security, performance, accessibility and maintainability. Debug from root cause. Never claim code was run unless it was."},
+    "research": {"preferred": "gemini", "system": "Act as a rigorous research assistant. Separate established facts, inference and uncertainty. Organize complex work into questions, evidence, analysis and conclusions. Never fabricate citations, URLs, studies or live research."},
+    "security": {"preferred": "gemini", "system": "Act as a defensive cybersecurity and DevOps specialist. Focus on secure design, threat modelling, hardening, detection, incident response and authorized testing. Do not facilitate unauthorized access or harm."},
+    "assignment": {"preferred": "gemini", "system": "Act as an academic tutor. Teach for understanding with definitions, step-by-step explanations, examples and short knowledge checks when useful. Respect the learner's syllabus and source material."},
+    "study": {"preferred": "gemini", "system": "Act as a patient study coach. Break topics into manageable lessons, explain one concept at a time, use analogies and worked examples, correct misconceptions and provide practice with feedback."},
+    "arabic": {"preferred": "gemini", "system": "Act as an Arabic language tutor. Be precise with spelling, tashkeel when useful, nahw, sarf, i'rab and translation. Distinguish literal translation from natural meaning and explain uncertainty."},
+    "math": {"preferred": "gemini", "system": "Act as a mathematics tutor. Define symbols, show a clear method, check calculations and explain common mistakes. Do not skip steps when teaching."},
+    "writing": {"preferred": "gemini", "system": "Act as a writing and editing specialist. Match audience, purpose and tone; improve clarity and structure while preserving intended meaning. Do not add unsupported claims."}
 }
 
 # --------------------------------------------------------------------------
@@ -187,21 +177,8 @@ def available_providers():
 
 
 def choose_provider(task: str, agent: str = "general") -> str:
-    """Pick a provider. Safe default: OpenAI, or first configured provider."""
-    if PROVIDER_OVERRIDE in KEYS:
-        return PROVIDER_OVERRIDE
-    preferred = AGENTS.get(agent, AGENTS["general"])["preferred"]
-    if preferred in KEYS and KEYS[preferred]:
-        return preferred
-    coding_words = ("code", "debug", "function", "script", "python", "bug")
-    if any(w in task.lower() for w in coding_words):
-        for name in ("deepseek", "claude", "openai", "gemini"):
-            if KEYS[name]:
-                return name
-    for name in ("openai", "gemini", "claude", "deepseek"):
-        if KEYS[name]:
-            return name
-    return "openai"  # no key set; call layer explains what is missing
+    """This build uses Gemini exclusively; task modes only change instructions."""
+    return "gemini"
 
 
 DISPLAY_NAMES = {"openai": "OpenAI", "gemini": "Gemini", "claude": "Claude", "deepseek": "DeepSeek"}
@@ -226,21 +203,14 @@ def upload_limits():
 
 def capabilities():
     return {
-        "providers": {k: {"configured": bool(v), "env_var": KEY_ENV[k],
-                          "vision": k in VISION_PROVIDERS} for k, v in KEYS.items()},
+        "provider": "gemini",
+        "providers": {"gemini": {"configured": bool(GEMINI_KEY), "env_var": "GEMINI_API_KEY", "vision": True}},
         "agents": list(AGENTS),
-        "combined": {"available": True, "mode": "parallel-compare-and-synthesise", "configured_providers": available_providers()},
-        "images": {"extensions": sorted(IMAGE_MIME_BY_EXT), "mimes": sorted(IMAGE_MIMES),
-                   "vision_providers": list(VISION_PROVIDERS),
-                   "note": "Images are sent as vision input to OpenAI/Gemini/Claude. DeepSeek cannot see images; with auto routing the server picks a configured vision provider. With no vision provider configured it explains this instead of faking analysis."},
-        "documents": {"extensions": sorted(SUPPORTED_EXTS),
-                      "text_extracted": sorted(TEXT_EXTS | DOC_EXTS),
-                      "note": "PDF/DOCX text is extracted locally (stdlib-only, best-effort). Scanned/image PDFs and binary files with no extractable text are reported, not guessed."},
+        "images": {"extensions": sorted(IMAGE_MIME_BY_EXT), "mimes": sorted(IMAGE_MIMES), "vision_provider": "gemini"},
+        "documents": {"extensions": sorted(SUPPORTED_EXTS), "text_extracted": sorted(TEXT_EXTS | DOC_EXTS)},
         "limits": upload_limits(),
-        "workspace": {"dir": WORKSPACE_DIR, "endpoints": ["/workspace/save", "/workspace/list", "/workspace/download", "/workspace/edit"],
-                      "note": "Files are saved per session_id (use project/<name> for a persistent project). Paths are clamped to the workspace; traversal is rejected."},
-        "projects": {"note": "Use session_id of the form project/<name> for a persistent project conversation. GET /memory/sessions lists all sessions with turn counts."},
-        "limits_note": "Per-file/count/total limits are configurable via UPLOAD_MAX_BYTES, MAX_UPLOAD_FILES, UPLOAD_TOTAL_MAX_BYTES. Provider/API limits (model context, image size rules) and server safety limits cannot be removed by this app; raise the env vars if your providers allow larger files.",
+        "workspace": {"dir": WORKSPACE_DIR, "endpoints": ["/workspace/save", "/workspace/list", "/workspace/download", "/workspace/edit"]},
+        "projects": {"note": "Use session_id values such as project/my-project to group conversations."}
     }
 
 def missing_key_message(provider: str) -> str:
@@ -451,21 +421,8 @@ def combined_answer(messages, task):
 
 
 def answer(task: str, agent=None, provider=None, session_id="cli", attachments=None) -> str:
-    """Ask the orchestrator and record the turn in memory."""
-    agent = agent or agent_for(task)
-    has_images = bool(attachments) and any(a.get("mime") in IMAGE_MIMES for a in attachments)
-    if provider in (None, "", "auto"):
-        if has_images:
-            vp = choose_vision_provider(task, agent)
-            if vp is None:
-                return ("No vision-capable provider is configured for image analysis. Set one of "
-                        "OPENAI_API_KEY, GEMINI_API_KEY, ANTHROPIC_API_KEY and retry. "
-                        "DeepSeek cannot see images. See README.md capability matrix.")
-            provider = vp
-        else:
-            provider = choose_provider(task, agent)
-    if provider != "combined" and provider not in PROVIDERS:
-        return f"Unknown provider '{provider}'. Choose combined, openai, gemini, claude, deepseek, or auto."
+    """Send all requests through Gemini with specialist instructions and session history."""
+    agent = agent if agent in AGENTS else agent_for(task)
     history = memory.history(session_id)
     system = AGENTS.get(agent, AGENTS["general"])["system"]
     messages = [{"role": "system", "content": system}]
@@ -474,8 +431,8 @@ def answer(task: str, agent=None, provider=None, session_id="cli", attachments=N
     if attachments:
         user_msg["attachments"] = attachments
     messages.append(user_msg)
-    reply = combined_answer(messages, task) if provider == "combined" else PROVIDERS[provider](messages, task)
-    if not _is_provider_error(reply) and "No vision-capable provider" not in reply:
+    reply = _call_gemini(messages, task)
+    if not reply.startswith(("Gemini error", "Gemini is not configured", "No vision-capable provider")):
         names = ", ".join(a.get("name", "file") for a in attachments) if attachments else None
         memory.add(session_id, "user", task + (f" [attachments: {names}]" if names else ""))
         memory.add(session_id, "assistant", reply)
