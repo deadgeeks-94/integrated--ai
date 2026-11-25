@@ -1,17 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string-array name="providers">
-        <item>auto</item>
-        <item>openai</item>
-        <item>gemini</item>
-        <item>claude</item>
-        <item>deepseek</item>
-    </string-array>
     <string-array name="agents">
         <item>general</item>
         <item>coding</item>
         <item>research</item>
         <item>security</item>
         <item>assignment</item>
+        <item>study</item>
+        <item>arabic</item>
+        <item>math</item>
+        <item>writing</item>
     </string-array>
 </resources>
