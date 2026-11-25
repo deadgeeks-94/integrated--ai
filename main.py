@@ -59,19 +59,11 @@ from pathlib import Path
 # Config (environment only, no credentials in source)
 # --------------------------------------------------------------------------
 
-OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
-ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-DEEPSEEK_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 
 # Original OpenAI routing, preserved. Set to model IDs your account can use.
-FAST_MODEL = os.getenv("MODEL_FAST", "gpt-4.1-mini")
-STRONG_MODEL = os.getenv("MODEL_STRONG", "gpt-4.1")
 MODEL_GEMINI = os.getenv("MODEL_GEMINI", "gemini-2.5-flash")
-MODEL_CLAUDE = os.getenv("MODEL_CLAUDE", "claude-sonnet-4-5")
-MODEL_DEEPSEEK = os.getenv("MODEL_DEEPSEEK", "deepseek-chat")
 
-PROVIDER_OVERRIDE = os.getenv("PROVIDER", "auto").lower()
 AGENT_OVERRIDE = os.getenv("AGENT", "general").lower()
 MEMORY_FILE = os.getenv("MEMORY_FILE", str(Path.home() / ".integrated-ai" / "memory.json"))
 MEMORY_MAX_TURNS = int(os.getenv("MEMORY_MAX_TURNS", "20"))
@@ -92,18 +84,9 @@ RATE_LIMIT_WINDOW_SECONDS = max(1, int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "6
 _rate_lock = threading.Lock()
 _rate_hits = {}
 
-KEYS = {
-    "openai": OPENAI_KEY,
-    "gemini": GEMINI_KEY,
-    "claude": ANTHROPIC_KEY,
-    "deepseek": DEEPSEEK_KEY,
-}
-KEY_ENV = {
-    "openai": "OPENAI_API_KEY",
-    "gemini": "GEMINI_API_KEY",
-    "claude": "ANTHROPIC_API_KEY",
-    "deepseek": "DEEPSEEK_API_KEY",
-}
+KEYS = {"gemini": GEMINI_KEY}
+KEY_ENV = {"gemini": "GEMINI_API_KEY"}
+
 
 # --------------------------------------------------------------------------
 # Specialist agents
@@ -266,23 +249,47 @@ def _call_gemini(messages, task):
     if not GEMINI_KEY:
         return missing_key_message("gemini")
     try:
+        system_text = next((m.get("content", "") for m in messages if m.get("role") == "system"), "")
         contents = []
         for m in messages:
-            parts = [{"text": m.get("content", "")}]
-            for a in m.get("attachments", []):
-                if a.get("mime") in IMAGE_MIMES and a.get("data_b64"):
-                    parts.append({"inline_data": {"mime_type": a["mime"], "data": a["data_b64"]}})
-                elif a.get("kind") == "text" and a.get("text"):
-                    parts.append({"text": f"[attachment {a.get('name')}]\n{a['text']}"})
-            contents.append({"role": "user" if m["role"] == "user" else "model", "parts": parts})
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{MODEL_GEMINI}:generateContent?key={GEMINI_KEY}"
-        )
-        data = _http_json(url, {}, {"contents": contents})
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+            if m.get("role") == "system":
+                continue
+            role = "model" if m.get("role") == "assistant" else "user"
+            parts = []
+            if m.get("content"):
+                parts.append({"text": m.get("content", "")})
+            for attachment in m.get("attachments", []):
+                if attachment.get("mime") in IMAGE_MIMES and attachment.get("data_b64"):
+                    parts.append({"inline_data": {"mime_type": attachment["mime"], "data": attachment["data_b64"]}})
+                elif attachment.get("kind") == "text" and attachment.get("text"):
+                    parts.append({"text": "[Attached file: " + attachment.get("name", "file") + "]\\n" + attachment["text"]})
+            if parts:
+                contents.append({"role": role, "parts": parts})
+        if not contents:
+            return "Please enter a message or attach a supported file."
+        payload = {
+            "contents": contents,
+            "generationConfig": {"temperature": 0.55, "topP": 0.9, "maxOutputTokens": 8192}
+        }
+        if system_text:
+            payload["systemInstruction"] = {"parts": [{"text": system_text}]}
+        url = "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL_GEMINI + ":generateContent?key=" + GEMINI_KEY
+        data = _http_json(url, {}, payload)
+        candidates = data.get("candidates") or []
+        if not candidates:
+            reason = data.get("promptFeedback", {}).get("blockReason")
+            return "Gemini did not return an answer" + (": " + str(reason) if reason else ". Check model safety feedback.")
+        parts = candidates[0].get("content", {}).get("parts", [])
+        answer_text = "\\n".join(p.get("text", "") for p in parts if p.get("text"))
+        if not answer_text.strip():
+            return "Gemini returned no text (finish reason: " + str(candidates[0].get("finishReason", "unknown")) + ")."
+        return answer_text.strip()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")
+        return "Gemini API error (HTTP " + str(exc.code) + "): " + detail[:1200]
     except Exception as exc:
-        return f"Gemini error: {exc}"
+        return "Gemini error: " + str(exc)
+
 
 
 def _call_claude(messages, task):
@@ -747,7 +754,7 @@ button{padding:10px 16px;font-size:16px}
 <h1>Integrated AI</h1>
 <div id="log">Ask a question, or attach images and documents.</div>
 <select id="agent"><option>general</option><option>coding</option><option>research</option><option>security</option><option>assignment</option></select>
-<select id="provider"><option>auto</option><option>openai</option><option>gemini</option><option>claude</option><option>deepseek</option></select>
+<p>Powered by Google Gemini</p>
 <input type="password" id="token" placeholder="Backend access token (not saved)">
 <textarea id="q" rows="3" placeholder="Type a message"></textarea>
 <input type="file" id="f" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.docx,.txt,.md,.py,.json,.csv,.html,.js,.sh,.yml,.yaml,.log">
@@ -756,7 +763,7 @@ button{padding:10px 16px;font-size:16px}
 function b64(buf){let b='';const bytes=new Uint8Array(buf);for(let i=0;i<bytes.length;i+=0x8000){b+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));}return btoa(b);}
 async function send(){
  const files=[...document.getElementById('f').files];
- const payload={message:document.getElementById('q').value,agent:document.getElementById('agent').value,provider:document.getElementById('provider').value};
+ const payload={message:document.getElementById('q').value,agent:document.getElementById('agent').value};
  if(files.length){
    payload.files=[];
    for(const f of files){const buf=await f.arrayBuffer();payload.files.push({filename:f.name,data_b64:b64(buf)});}
