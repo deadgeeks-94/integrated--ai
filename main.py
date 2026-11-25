@@ -202,8 +202,17 @@ def _http_json(url, headers, payload, timeout=60):
         headers={"Content-Type": "application/json", **headers},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    # Gemini can return 503 when shared model capacity is temporarily exhausted.
+    # Retry only transient server-capacity errors; do not retry auth, quota, or bad-request errors.
+    delays = (2, 4, 8)
+    for attempt in range(len(delays) + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code != 503 or attempt >= len(delays):
+                raise
+            time.sleep(delays[attempt])
 
 
 def _call_gemini(messages, task):
