@@ -1,3 +1,1 @@
-openai>=1.0.0
-# No other packages required: the server, web UI, memory, and file
-# processing use the Python standard library only.
+# Gemini-only backend uses Python standard library; no provider SDK required.
