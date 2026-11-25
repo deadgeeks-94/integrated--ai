@@ -149,7 +149,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         findViewById<Button>(R.id.checkButton).setOnClickListener { checkBackend() }
-        findViewById<Button>(R.id.menuButton).setOnClickListener { drawerLayout.open() }
+        findViewById<Button>(R.id.menuButton).setOnClickListener { drawerLayout.openDrawer(android.view.Gravity.START) }
         findViewById<Button>(R.id.clearButton).setOnClickListener {
             drawerLayout.closeDrawers()
             lifecycleScope.launch {
