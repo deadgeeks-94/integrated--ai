@@ -20,9 +20,9 @@ CLI commands:
   quit / exit
 
 Environment variables (all optional, see README.md):
-  OPENAI_API_KEY, GEMINI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY
-  MODEL_FAST, MODEL_STRONG, MODEL_GEMINI, MODEL_CLAUDE, MODEL_DEEPSEEK
-  PROVIDER (auto|openai|gemini|claude|deepseek), AGENT (coding|research|...)
+  GEMINI_API_KEY
+  MODEL_GEMINI
+  AGENT (general|coding|research|study|arabic|...)
   PORT (default 8000), HOST (default 0.0.0.0)
   MEMORY_FILE, MEMORY_MAX_TURNS (default 20), MAX_FILE_BYTES (default 200000)
   UPLOAD_MAX_BYTES (default 50 MB per file), MAX_UPLOAD_FILES (10 per request),
@@ -720,7 +720,7 @@ class Handler(BaseHTTPRequestHandler):
                 reply = answer(
                     task,
                     agent=data.get("agent"),
-                    provider=data.get("provider"),
+                    provider="gemini",
                     session_id=str(data.get("session_id", "web")),
                     attachments=attachments,
                 )
@@ -730,7 +730,7 @@ class Handler(BaseHTTPRequestHandler):
                 reply = analyze_attachments(
                     task, data,
                     agent=data.get("agent"),
-                    provider=data.get("provider"),
+                    provider="gemini",
                     session_id=str(data.get("session_id", "web")),
                 )
                 self._json(200, {"reply": reply})
@@ -805,11 +805,10 @@ def serve():
 
 
 def cli():
-    agent = AGENT_OVERRIDE
-    provider = PROVIDER_OVERRIDE
-    print(f"Integrated AI CLI. Agent: {agent}. Provider: {provider}.")
-    print(f"Configured providers: {available_providers() or 'none yet (set an API key env var)'}")
-    print("Commands: /agent <name>, /provider <name>, /analyze <path>, /memory, /clear, quit")
+    agent = AGENT_OVERRIDE if AGENT_OVERRIDE in AGENTS else "general"
+    print(f"Integrated AI CLI · Gemini · Agent: {agent}")
+    print("Gemini configured:", bool(GEMINI_KEY))
+    print("Commands: /agent <name>, /analyze <path>, /memory, /clear, quit")
     while True:
         try:
             line = input("you> ").strip()
@@ -820,29 +819,18 @@ def cli():
         if not line:
             continue
         if line.startswith("/agent "):
-            name = line.split()[1].lower()
+            name = line.split(maxsplit=1)[1].lower()
             if name in AGENTS:
                 agent = name
-                print(f"agent set to {name}")
+                print("agent set to", name)
             else:
-                print(f"unknown agent. choose from {list(AGENTS)}")
-            continue
-        if line.startswith("/provider "):
-            name = line.split()[1].lower()
-            if name in PROVIDERS or name == "auto":
-                provider = name
-                print(f"provider set to {name}")
-            else:
-                print(f"unknown provider. choose from {list(PROVIDERS)} or auto")
+                print("unknown agent. choose from", list(AGENTS))
             continue
         if line.startswith("/analyze "):
             path = line[len("/analyze "):].strip()
             try:
-                result = analyze_file(
-                    "Summarize this file and note anything important",
-                    path=path, agent=agent,
-                    provider=None if provider == "auto" else provider,
-                )
+                result = analyze_file("Summarize this file and note anything important",
+                    path=path, agent=agent, provider="gemini")
             except ValueError as exc:
                 result = str(exc)
             print("ai>", result)
@@ -854,7 +842,7 @@ def cli():
             memory.clear("cli")
             print("memory cleared")
             continue
-        print("ai>", answer(line, agent=agent, provider=None if provider == "auto" else provider))
+        print("ai>", answer(line, agent=agent, provider="gemini"))
 
 
 if __name__ == "__main__":
